@@ -8,13 +8,14 @@ from pyrogram.errors import SessionPasswordNeeded
 from pyrogram.handlers import RawUpdateHandler
 from pyrogram.raw import functions
 from pyrogram.raw import types as raw_types
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user
 from backend.core.config import settings
-from backend.core.security import encrypt_session
+from backend.core.security import decrypt_secret, encrypt_session
 from backend.db.session import get_db
+from backend.models.proxy import Proxy
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
 from backend.schemas.auth import (
@@ -39,13 +40,39 @@ _qr_sessions: dict[str, dict] = {}
 QR_TOKEN_TTL_SECONDS = 30
 
 
-def _new_client(name: str) -> Client:
+def _new_client(name: str, proxy: dict | None = None) -> Client:
     return Client(
         name=name,
         api_id=settings.api_id,
         api_hash=settings.api_hash,
         in_memory=True,
+        proxy=proxy,
     )
+
+
+async def _pick_send_code_proxy(db: AsyncSession) -> dict | None:
+    """Picks a random active proxy for `/send_code` only (per AGENTS.md:
+    routing the code request through a rotating proxy pool, instead of
+    always the VPS's own IP, reduces false-positive anti-fraud SMS
+    suppression on some numbers — see the note on this in chat/AGENTS.md
+    4.1). Prefers proxies whose last liveness check passed."""
+    result = await db.execute(
+        select(Proxy)
+        .where(Proxy.is_active.is_(True))
+        .order_by((Proxy.last_status == "alive").desc(), func.random())
+        .limit(1)
+    )
+    proxy = result.scalar_one_or_none()
+    if proxy is None:
+        return None
+
+    return {
+        "scheme": proxy.protocol,
+        "hostname": proxy.host,
+        "port": proxy.port,
+        "username": proxy.username,
+        "password": decrypt_secret(proxy.encrypted_password) if proxy.encrypted_password else None,
+    }
 
 
 @router.get("/accounts", response_model=list[TelegramAccountOut])
@@ -58,8 +85,11 @@ async def list_accounts(
 
 
 @router.post("/send_code", response_model=SendCodeResponse)
-async def send_code(payload: SendCodeRequest) -> SendCodeResponse:
-    client = _new_client(f"login_{payload.phone}")
+async def send_code(
+    payload: SendCodeRequest, db: AsyncSession = Depends(get_db)
+) -> SendCodeResponse:
+    proxy = await _pick_send_code_proxy(db)
+    client = _new_client(f"login_{payload.phone}", proxy=proxy)
     await client.connect()
     try:
         sent = await client.send_code(payload.phone)

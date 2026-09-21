@@ -4,6 +4,7 @@ import QrLogin from "../components/QrLogin.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label } from "../components/ui/Input.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const STEP = { PHONE: "phone", CODE: "code", PASSWORD: "password" };
 const MODE = { CODE: "code", QR: "qr" };
@@ -184,7 +185,7 @@ export default function AccountsPage({ accounts, activeAccountId, onSelect, onAd
 
   return (
     <div className="p-4 space-y-4">
-      <h1 className="text-lg font-semibold">Аккаунты</h1>
+      <PageHeader icon="🚀" title="Аккаунты" />
 
       {accounts.length > 0 && (
         <div className="space-y-2">

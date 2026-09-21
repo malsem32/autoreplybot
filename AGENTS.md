@@ -70,7 +70,8 @@
 - Два способа входа, оба заканчиваются в общем `_finalize_login` (`backend/api/auth.py`): по коду — `send_code(phone)` → `phone_code_hash` → `sign_in(phone, phone_code_hash, code)` → при 2FA `check_password(password)`; по QR — `auth.exportLoginToken` (raw MTProto), опрос `/api/auth/qr/{request_id}/poll` до `LoginTokenSuccess`. Оба пути очищают временные клиенты/токены сразу после использования.
 - QR-вход не подтверждён живым тестом на реальных серверах Telegram (песочница разработки не имеет доступа к MTProto) — переход через другой дата-центр (`LoginTokenMigrateTo`) обрабатывается как явный рестарт flow, а не бесшовная миграция; при доработке смотреть `backend/api/auth.py:qr_poll`.
 - Один пользователь может подключить несколько `TelegramAccount` — уникальности по `phone`/`user_id` в схеме нет и не должно появляться.
-- Никогда не логировать: номера телефонов, коды подтверждения, пароли 2FA, session string, `api_id`/`api_hash`.
+- `POST /api/auth/send_code` (и только он) может уходить через прокси из таблицы `proxies` (см. 4.12) — снижает шанс, что Telegram посчитает IP самого VPS подозрительным и приглушит доставку SMS для конкретного номера. `sign_in`/`check_password`/QR-flow прокси не используют.
+- Никогда не логировать: номера телефонов, коды подтверждения, пароли 2FA, session string, `api_id`/`api_hash`, пароли прокси.
 
 ### 4.2. Валидация Mini App
 
@@ -84,6 +85,8 @@
 - Рассыльщик поддерживает spintax `{Вариант1|Вариант2|Вариант3}`.
 - Автоответчик: игнорировать `message.from_user.is_bot`, cooldown не менее 1–2 часов на диалог (`user_id`).
 - Каждое сообщение, отправленное рассыльщиком (`broadcaster.py`), обязано заканчиваться фиксированной подписью: `Отправлено через @{BOT_USERNAME}` — добавляется автоматически к тексту после подстановки spintax, не хранится как часть `text_template` в БД.
+- `BroadcastCampaign.target_chats` — список строк: числовой ID, `@username` или `t.me/...`-ссылка (включая инвайт-ссылки `t.me/+`/`t.me/joinchat/`); резолвится в реальный chat_id при каждой отправке через `workers/targets.py:resolve_target`, а не при сохранении кампании. Ссылки на папки чатов (`t.me/addlist/...`) пока не разворачиваются в список чатов — `resolve_target` кидает понятную ошибку вместо угадывания непроверенной raw-схемы `chatlists.*`.
+- Каждая попытка отправки (успех/ошибка, включая нерезолвящиеся target'ы) пишется в `BroadcastLog`; читается через `GET /api/broadcasts/{account_id}/campaigns/{campaign_id}/logs` — это единственный способ узнать, что реально ушло, а что нет.
 
 ### 4.4. Секреты и конфигурация
 
@@ -136,6 +139,14 @@
 - Отдача — `GET /api/uploads/{filename}` **намеренно без `initData`**: `<img src>` не может передать кастомный заголовок, поэтому доступ держится на непредсказуемости UUID-имени файла; наружу в API отдаётся не `photo_path`, а вычисляемый `photo_url` (см. `_photo_url` в `backend/schemas/autoresponder.py`).
 - `/app/uploads` — общий docker volume `uploads_data`, примонтирован и в `backend` (запись при загрузке), и в `worker` (чтение при отправке через `send_photo`/`reply_photo`). Новый сервис, которому нужны фото, обязан подключить тот же volume.
 - При удалении/замене фото у правила или кампании (`remove_photo` / новый `photo_path` в PATCH) — старый файл удаляется с диска (`delete_upload`), не копится мусор.
+
+### 4.12. Прокси-пул
+
+- Модель `Proxy` (`backend/models/proxy.py`): `protocol` (`socks5`|`http`), `host`, `port`, `username`, `encrypted_password` (Fernet, тем же ключом `ENCRYPTION_KEY`), `is_active`, `last_status`/`last_latency_ms`/`last_checked_at`.
+- CRUD и проверка живучести — только `/api/admin/proxies*`, за `require_admin_user` (ADMIN_TELEGRAM_IDS, см. 4.6); пароль прокси никогда не возвращается наружу (`ProxyOut` его не содержит).
+- Проверка живучести (`backend/services/proxy_check.py`) — это TCP-connect до `host:port` самого прокси, а не полноценный SOCKS5/HTTP-хендшейк через него; сигнал "прокси отвечает", а не гарантия рабочего туннеля.
+- Выбор прокси для `send_code` (`backend/api/auth.py:_pick_send_code_proxy`) — случайный среди активных, с приоритетом у тех, чья последняя проверка была `alive`; если прокси нет или все неактивны — запрос идёт напрямую.
+- Требует `python-socks[asyncio]` в зависимостях (это использует Pyrogram для подключения через прокси) — держать в `requirements.txt` синхронно с `pyrogram`.
 
 ## 5. Переменные окружения
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import StatCard from "../components/StatCard.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 export default function StatsPage() {
   const [stats, setStats] = useState(null);
@@ -15,7 +16,7 @@ export default function StatsPage() {
 
   return (
     <div className="p-4 space-y-6">
-      <h1 className="text-lg font-semibold">Статистика</h1>
+      <PageHeader icon="📊" title="Статистика" />
 
       <div>
         <h2 className="text-sm uppercase text-slate-500 mb-2">Пользователи</h2>

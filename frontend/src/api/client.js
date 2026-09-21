@@ -68,6 +68,15 @@ export const api = {
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/pause`, { method: "POST" }),
   resumeCampaign: (accountId, campaignId) =>
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/resume`, { method: "POST" }),
+  listCampaignLogs: (accountId, campaignId) =>
+    request(`/broadcasts/${accountId}/campaigns/${campaignId}/logs`),
 
   adminStats: () => request("/admin/stats"),
+
+  listProxies: () => request("/admin/proxies"),
+  createProxy: (proxy) => request("/admin/proxies", { method: "POST", body: proxy }),
+  updateProxy: (proxyId, patch) =>
+    request(`/admin/proxies/${proxyId}`, { method: "PATCH", body: patch }),
+  deleteProxy: (proxyId) => request(`/admin/proxies/${proxyId}`, { method: "DELETE" }),
+  checkAllProxies: () => request("/admin/proxies/check", { method: "POST" }),
 };

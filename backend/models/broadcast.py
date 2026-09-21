@@ -15,7 +15,9 @@ class BroadcastCampaign(TimestampMixin, Base):
     title: Mapped[str] = mapped_column(String(255))
     text_template: Mapped[str] = mapped_column(String)
     photo_path: Mapped[str | None] = mapped_column(String, nullable=True)
-    target_chat_ids: Mapped[list[int]] = mapped_column(JSON, default=list)
+    # Each entry: numeric chat id as a string, "@username", or a t.me/... link
+    # (including invite links) — resolved at send time, see workers/targets.py.
+    target_chats: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     schedule_type: Mapped[str] = mapped_column(String(16), default="recurring")  # recurring | once
     interval_minutes: Mapped[int] = mapped_column(Integer, default=60)

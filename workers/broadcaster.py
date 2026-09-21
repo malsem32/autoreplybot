@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.config import settings
 from backend.models.broadcast import BroadcastCampaign, BroadcastLog
 from workers.spintax import render_spintax
+from workers.targets import resolve_target
 
 MIN_DELAY_SECONDS = 20
 MAX_DELAY_SECONDS = 45
@@ -19,17 +20,18 @@ def _with_signature(text: str) -> str:
 
 
 async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCampaign) -> None:
-    """Sends `campaign.text_template` to every chat in `target_chat_ids`.
+    """Sends `campaign.text_template` to every chat in `target_chats`.
 
     Per AGENTS.md 4.3: random 20-45s delay between chats, FloodWait is
     always caught and slept out (never retried immediately), spintax is
     resolved per-recipient, and every message carries the bot signature.
     """
-    for chat_id in campaign.target_chat_ids:
+    for raw_target in campaign.target_chats:
         text = _with_signature(render_spintax(campaign.text_template))
 
         while True:
             try:
+                chat_id = await resolve_target(client, raw_target)
                 if campaign.photo_path:
                     await client.send_photo(chat_id, campaign.photo_path, caption=text)
                 else:
@@ -46,10 +48,10 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
             except Exception as exc:  # noqa: BLE001 - log and move on to the next chat
                 log = BroadcastLog(
                     campaign_id=campaign.id,
-                    chat_id=chat_id,
+                    chat_id=0,
                     sent_at=datetime.now(UTC),
                     status="error",
-                    error_message=str(exc),
+                    error_message=f"{raw_target}: {exc}",
                 )
             break
 

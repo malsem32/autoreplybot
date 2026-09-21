@@ -5,13 +5,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.api.deps import get_current_user
 from backend.core.uploads import delete_upload
 from backend.db.session import get_db
-from backend.models.broadcast import BroadcastCampaign
+from backend.models.broadcast import BroadcastCampaign, BroadcastLog
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
 from backend.schemas.broadcast import (
     BroadcastCampaignIn,
     BroadcastCampaignOut,
     BroadcastCampaignUpdate,
+    BroadcastLogOut,
 )
 
 router = APIRouter(prefix="/api/broadcasts", tags=["broadcasts"])
@@ -110,6 +111,23 @@ async def delete_campaign(
     delete_upload(campaign.photo_path)
     await db.delete(campaign)
     await db.commit()
+
+
+@router.get("/{account_id}/campaigns/{campaign_id}/logs", response_model=list[BroadcastLogOut])
+async def list_campaign_logs(
+    account_id: int,
+    campaign_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[BroadcastLog]:
+    await _get_owned_campaign(db, user, account_id, campaign_id)
+    result = await db.execute(
+        select(BroadcastLog)
+        .where(BroadcastLog.campaign_id == campaign_id)
+        .order_by(BroadcastLog.sent_at.desc())
+        .limit(200)
+    )
+    return list(result.scalars().all())
 
 
 @router.post("/{account_id}/campaigns/{campaign_id}/pause", response_model=BroadcastCampaignOut)

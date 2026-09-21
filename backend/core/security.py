@@ -12,12 +12,18 @@ _fernet = Fernet(settings.encryption_key.encode())
 INIT_DATA_MAX_AGE_SECONDS = 24 * 60 * 60
 
 
-def encrypt_session(session_string: str) -> str:
-    return _fernet.encrypt(session_string.encode()).decode()
+def encrypt_secret(value: str) -> str:
+    return _fernet.encrypt(value.encode()).decode()
 
 
-def decrypt_session(encrypted: str) -> str:
+def decrypt_secret(encrypted: str) -> str:
     return _fernet.decrypt(encrypted.encode()).decode()
+
+
+# Aliases kept for call sites that specifically deal with MTProto session
+# strings (backend/api/auth.py) — same Fernet key/logic as encrypt_secret.
+encrypt_session = encrypt_secret
+decrypt_session = decrypt_secret
 
 
 class InitDataError(Exception):

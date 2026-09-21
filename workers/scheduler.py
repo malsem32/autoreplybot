@@ -80,7 +80,9 @@ async def main() -> None:
     configure_logging()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(dispatch_due_campaigns, "interval", minutes=1)
+    # Short interval so a freshly created campaign goes out within
+    # seconds instead of waiting up to a minute for the next tick.
+    scheduler.add_job(dispatch_due_campaigns, "interval", seconds=15)
     scheduler.add_job(ensure_responders_running, "interval", minutes=1)
     scheduler.start()
 
