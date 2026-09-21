@@ -8,7 +8,7 @@ def open_app_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Открыть Автопилот",
+                    text="🚀 Запустить Автопилот",
                     web_app=WebAppInfo(url=settings.webapp_url),
                 )
             ]

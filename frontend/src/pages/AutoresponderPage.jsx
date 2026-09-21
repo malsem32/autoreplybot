@@ -4,6 +4,7 @@ import PhotoPicker from "../components/PhotoPicker.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 const emptyForm = {
   triggerType: "all",
@@ -229,10 +230,11 @@ export default function AutoresponderPage({ accountId }) {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Автоответчик</h1>
-        {!showForm && <Button onClick={() => setShowForm(true)}>+ Правило</Button>}
-      </div>
+      <PageHeader
+        icon="⚡"
+        title="Автоответчик"
+        action={!showForm && <Button onClick={() => setShowForm(true)}>+ Правило</Button>}
+      />
 
       {showForm && (
         <Card>

@@ -5,6 +5,7 @@ import Nav from "./components/Nav.jsx";
 import AccountsPage from "./pages/AccountsPage.jsx";
 import AutoresponderPage from "./pages/AutoresponderPage.jsx";
 import BroadcastPage from "./pages/BroadcastPage.jsx";
+import ProxiesPage from "./pages/ProxiesPage.jsx";
 import StatsPage from "./pages/StatsPage.jsx";
 
 export default function App() {
@@ -55,6 +56,7 @@ export default function App() {
         />
         <Route path="/broadcast" element={<BroadcastPage accountId={activeAccountId} />} />
         {isAdmin && <Route path="/stats" element={<StatsPage />} />}
+        {isAdmin && <Route path="/proxies" element={<ProxiesPage />} />}
       </Routes>
       <Nav isAdmin={isAdmin} />
     </div>

@@ -4,6 +4,7 @@ import StatCard from "../components/StatCard.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label } from "../components/ui/Input.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 function TagFeatureSettings() {
   const [settings, setSettings] = useState(null);
@@ -93,7 +94,7 @@ export default function StatsPage() {
 
   return (
     <div className="p-4 space-y-6">
-      <h1 className="text-lg font-semibold">Статистика</h1>
+      <PageHeader icon="📊" title="Статистика" />
 
       <TagFeatureSettings />
 

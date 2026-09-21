@@ -1,7 +1,7 @@
 """add tag_random_users to broadcast_campaigns
 
-Revision ID: 0002
-Revises: 0001
+Revision ID: 0004
+Revises: 0003
 Create Date: 2026-09-21
 
 """
@@ -9,8 +9,8 @@ Create Date: 2026-09-21
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0002"
-down_revision = "0001"
+revision = "0004"
+down_revision = "0003"
 branch_labels = None
 depends_on = None
 

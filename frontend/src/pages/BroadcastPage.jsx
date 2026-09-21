@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { api } from "../api/client.js";
+import CampaignLogsModal from "../components/CampaignLogsModal.jsx";
 import PhotoPicker from "../components/PhotoPicker.jsx";
 import Badge from "../components/ui/Badge.jsx";
 import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
+import PageHeader from "../components/ui/PageHeader.jsx";
 
 // Zero-width space: a placeholder a user can drop into the message text.
 // When "tag random users" is on, the broadcaster replaces each occurrence
@@ -146,9 +148,9 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
       </div>
 
       <div>
-        <Label>ID чатов, через запятую</Label>
+        <Label>Чаты — через запятую (ID, @юзернейм или ссылка t.me/…)</Label>
         <Input
-          placeholder="-1001234567890, 123456789"
+          placeholder="-1001234567890, @my_channel, https://t.me/+AbCdEf"
           value={form.chatIds}
           onChange={(e) => setForm({ ...form, chatIds: e.target.value })}
           required
@@ -209,9 +211,9 @@ function formToPayload(form) {
     title: form.title,
     text_template: form.textTemplate,
     photo_path: form.photo?.path,
-    target_chat_ids: form.chatIds
+    target_chats: form.chatIds
       .split(",")
-      .map((id) => Number(id.trim()))
+      .map((id) => id.trim())
       .filter(Boolean),
     tag_random_users: form.tagRandomUsers,
     schedule_type: form.scheduleType,
@@ -228,7 +230,7 @@ function campaignToForm(c) {
   return {
     title: c.title,
     textTemplate: c.text_template,
-    chatIds: c.target_chat_ids.join(", "),
+    chatIds: c.target_chats.join(", "),
     tagRandomUsers: c.tag_random_users,
     scheduleType: c.schedule_type,
     intervalMinutes: c.interval_minutes,
@@ -239,6 +241,7 @@ function campaignToForm(c) {
 
 function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeatureChanged }) {
   const [editing, setEditing] = useState(false);
+  const [showLogs, setShowLogs] = useState(false);
   const [error, setError] = useState("");
 
   async function handleUpdate(form) {
@@ -299,10 +302,10 @@ function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeature
           <p className="text-sm text-slate-400 mt-1">{campaign.text_template}</p>
           <p className="text-xs text-slate-500 mt-1">
             {campaign.schedule_type === "once"
-              ? `Once: ${new Date(campaign.scheduled_at).toLocaleString("ru-RU")}`
+              ? `Одноразово: ${new Date(campaign.scheduled_at).toLocaleString("ru-RU")}`
               : `Каждые ${campaign.interval_minutes} мин`}
             {" · "}
-            {campaign.target_chat_ids.length} чат(ов)
+            {campaign.target_chats.length} чат(ов)
             {campaign.tag_random_users && " · теги случайных участников"}
           </p>
         </div>
@@ -317,7 +320,7 @@ function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeature
 
       {error && <p className="text-red-400 text-xs">{error}</p>}
 
-      <div className="flex gap-2 pt-1">
+      <div className="flex gap-2 pt-1 flex-wrap">
         <Button variant="secondary" onClick={() => setEditing(true)}>
           Изменить
         </Button>
@@ -326,10 +329,21 @@ function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeature
             {campaign.status === "active" ? "Пауза" : "Запустить"}
           </Button>
         )}
+        <Button variant="secondary" onClick={() => setShowLogs(true)}>
+          Логи
+        </Button>
         <Button variant="danger" onClick={handleDelete}>
           Удалить
         </Button>
       </div>
+
+      {showLogs && (
+        <CampaignLogsModal
+          accountId={accountId}
+          campaignId={campaign.id}
+          onClose={() => setShowLogs(false)}
+        />
+      )}
     </Card>
   );
 }
@@ -373,10 +387,11 @@ export default function BroadcastPage({ accountId }) {
 
   return (
     <div className="p-4 space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Рассылки</h1>
-        {!showForm && <Button onClick={() => setShowForm(true)}>+ Кампания</Button>}
-      </div>
+      <PageHeader
+        icon="📣"
+        title="Рассылки"
+        action={!showForm && <Button onClick={() => setShowForm(true)}>+ Кампания</Button>}
+      />
 
       {showForm && (
         <Card>

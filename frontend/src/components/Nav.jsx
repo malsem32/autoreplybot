@@ -20,6 +20,11 @@ export default function Nav({ isAdmin }) {
           Статистика
         </NavLink>
       )}
+      {isAdmin && (
+        <NavLink to="/proxies" className={linkClass}>
+          Прокси
+        </NavLink>
+      )}
     </nav>
   );
 }
