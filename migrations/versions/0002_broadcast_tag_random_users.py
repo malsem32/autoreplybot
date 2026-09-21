@@ -18,9 +18,7 @@ depends_on = None
 def upgrade() -> None:
     op.add_column(
         "broadcast_campaigns",
-        sa.Column(
-            "tag_random_users", sa.Boolean(), nullable=False, server_default=sa.false()
-        ),
+        sa.Column("tag_random_users", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
 
 

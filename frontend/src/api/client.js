@@ -70,4 +70,9 @@ export const api = {
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/resume`, { method: "POST" }),
 
   adminStats: () => request("/admin/stats"),
+  adminGetTagFeature: () => request("/admin/tag-feature"),
+  adminUpdateTagFeature: (patch) => request("/admin/tag-feature", { method: "PATCH", body: patch }),
+
+  getTagFeatureStatus: () => request("/features/tag-broadcast"),
+  createTagFeatureInvoice: () => request("/features/tag-broadcast/invoice", { method: "POST" }),
 };

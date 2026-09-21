@@ -13,8 +13,17 @@ from backend.schemas.broadcast import (
     BroadcastCampaignOut,
     BroadcastCampaignUpdate,
 )
+from backend.services import tag_feature
 
 router = APIRouter(prefix="/api/broadcasts", tags=["broadcasts"])
+
+
+def _require_tag_feature_access(user: User) -> None:
+    if not tag_feature.has_access(user):
+        raise HTTPException(
+            status.HTTP_402_PAYMENT_REQUIRED,
+            "tag_random_users requires an active purchase (see /api/features/tag-broadcast)",
+        )
 
 
 async def _get_owned_account(db: AsyncSession, user: User, account_id: int) -> TelegramAccount:
@@ -65,6 +74,8 @@ async def create_campaign(
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
     await _get_owned_account(db, user, account_id)
+    if payload.tag_random_users:
+        _require_tag_feature_access(user)
     campaign = BroadcastCampaign(account_id=account_id, status="active", **payload.model_dump())
     db.add(campaign)
     await db.commit()
@@ -81,6 +92,8 @@ async def update_campaign(
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
     campaign = await _get_owned_campaign(db, user, account_id, campaign_id)
+    if payload.tag_random_users:
+        _require_tag_feature_access(user)
 
     data = payload.model_dump(exclude_unset=True, exclude={"remove_photo"})
     new_photo = data.pop("photo_path", None)

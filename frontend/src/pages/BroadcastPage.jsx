@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import WebApp from "@twa-dev/sdk";
 import { api } from "../api/client.js";
 import PhotoPicker from "../components/PhotoPicker.jsx";
 import Badge from "../components/ui/Badge.jsx";
@@ -29,11 +30,33 @@ function toLocalDatetimeInput(iso) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
+function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, onTagFeatureChanged }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [buying, setBuying] = useState(false);
   const textareaRef = useRef(null);
+
+  const tagAccess = tagFeature?.has_access ?? false;
+
+  async function handleBuyTagFeature() {
+    setError("");
+    setBuying(true);
+    try {
+      const { invoice_link: link } = await api.createTagFeatureInvoice();
+      WebApp.openInvoice(link, async (status) => {
+        if (status === "paid") {
+          const fresh = await api.getTagFeatureStatus();
+          onTagFeatureChanged?.(fresh);
+          setForm((f) => ({ ...f, tagRandomUsers: true }));
+        }
+        setBuying(false);
+      });
+    } catch (err) {
+      setError(err.message);
+      setBuying(false);
+    }
+  }
 
   function insertTagPlaceholder() {
     const el = textareaRef.current;
@@ -53,7 +76,7 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
     setError("");
     setSaving(true);
     try {
-      await onSubmit(form);
+      await onSubmit({ ...form, tagRandomUsers: tagAccess && form.tagRandomUsers });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -81,21 +104,36 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
           onChange={(e) => setForm({ ...form, textTemplate: e.target.value })}
           required
         />
-        <div className="flex items-center justify-between gap-2 mt-1.5">
+        <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
           <Button type="button" variant="secondary" onClick={insertTagPlaceholder}>
             + Метка для тегов
           </Button>
-          <Button
-            type="button"
-            variant={form.tagRandomUsers ? "primary" : "secondary"}
-            onClick={() => setForm({ ...form, tagRandomUsers: !form.tagRandomUsers })}
-          >
-            Теги случайных участников: {form.tagRandomUsers ? "Вкл" : "Выкл"}
-          </Button>
+          {tagAccess ? (
+            <Button
+              type="button"
+              variant={form.tagRandomUsers ? "primary" : "secondary"}
+              onClick={() => setForm({ ...form, tagRandomUsers: !form.tagRandomUsers })}
+            >
+              Теги случайных участников: {form.tagRandomUsers ? "Вкл" : "Выкл"}
+            </Button>
+          ) : (
+            <Button type="button" variant="secondary" disabled={buying} onClick={handleBuyTagFeature}>
+              {buying
+                ? "Открываем оплату…"
+                : `Купить теги за ${tagFeature?.stars_price ?? "…"} ⭐ (${tagFeature?.duration_days ?? "…"} дн.)`}
+            </Button>
+          )}
         </div>
         <p className="text-xs text-slate-500 mt-1">
           Вставьте метку в текст — при отправке она заменится на упоминание 5 случайных
           участников чата (если теги включены), иначе просто удалится.
+          {tagFeature && !tagFeature.is_admin && tagFeature.expires_at && (
+            <>
+              {" "}
+              Доступ {tagAccess ? "активен" : "истёк"} до{" "}
+              {new Date(tagFeature.expires_at).toLocaleString("ru-RU")}.
+            </>
+          )}
         </p>
       </div>
 
@@ -199,7 +237,7 @@ function campaignToForm(c) {
   };
 }
 
-function CampaignCard({ campaign, accountId, onChanged }) {
+function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeatureChanged }) {
   const [editing, setEditing] = useState(false);
   const [error, setError] = useState("");
 
@@ -243,6 +281,8 @@ function CampaignCard({ campaign, accountId, onChanged }) {
           submitLabel="Сохранить"
           onSubmit={handleUpdate}
           onCancel={() => setEditing(false)}
+          tagFeature={tagFeature}
+          onTagFeatureChanged={onTagFeatureChanged}
         />
       </Card>
     );
@@ -298,6 +338,11 @@ export default function BroadcastPage({ accountId }) {
   const [campaigns, setCampaigns] = useState([]);
   const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
+  const [tagFeature, setTagFeature] = useState(null);
+
+  useEffect(() => {
+    api.getTagFeatureStatus().then(setTagFeature).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (accountId) {
@@ -340,6 +385,8 @@ export default function BroadcastPage({ accountId }) {
             submitLabel="Создать"
             onSubmit={handleCreate}
             onCancel={() => setShowForm(false)}
+            tagFeature={tagFeature}
+            onTagFeatureChanged={setTagFeature}
           />
         </Card>
       )}
@@ -348,7 +395,14 @@ export default function BroadcastPage({ accountId }) {
 
       <div className="space-y-3">
         {campaigns.map((c) => (
-          <CampaignCard key={c.id} campaign={c} accountId={accountId} onChanged={handleChanged} />
+          <CampaignCard
+            key={c.id}
+            campaign={c}
+            accountId={accountId}
+            onChanged={handleChanged}
+            tagFeature={tagFeature}
+            onTagFeatureChanged={setTagFeature}
+          />
         ))}
         {campaigns.length === 0 && !showForm && (
           <p className="text-sm text-slate-500">Кампаний пока нет — создайте первую.</p>
