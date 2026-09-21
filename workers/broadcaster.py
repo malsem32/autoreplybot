@@ -30,7 +30,10 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
 
         while True:
             try:
-                await client.send_message(chat_id, text)
+                if campaign.photo_path:
+                    await client.send_photo(chat_id, campaign.photo_path, caption=text)
+                else:
+                    await client.send_message(chat_id, text)
                 log = BroadcastLog(
                     campaign_id=campaign.id,
                     chat_id=chat_id,

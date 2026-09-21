@@ -15,20 +15,22 @@ class Settings(BaseSettings):
     database_url: str
     redis_url: str
 
-    jwt_secret: str
-    admin_jwt_secret: str
-    admin_username: str
-    admin_password_hash: str  # bcrypt hash, generate with passlib/bcrypt CLI
-
     log_level: str = "INFO"
 
     # Gatekeeper bot
     required_channels: str = ""  # comma-separated @usernames or -100... chat ids
     webapp_url: str = ""
 
+    # Telegram user_ids allowed to see /api/admin/* inside the Mini App
+    admin_telegram_ids: str = ""
+
     @property
     def required_channels_list(self) -> list[str]:
         return [c.strip() for c in self.required_channels.split(",") if c.strip()]
+
+    @property
+    def admin_telegram_ids_list(self) -> list[int]:
+        return [int(i.strip()) for i in self.admin_telegram_ids.split(",") if i.strip()]
 
 
 settings = Settings()

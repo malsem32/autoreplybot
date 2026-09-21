@@ -1,115 +1,319 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
+import PhotoPicker from "../components/PhotoPicker.jsx";
+import Badge from "../components/ui/Badge.jsx";
+import Button from "../components/ui/Button.jsx";
+import Card from "../components/ui/Card.jsx";
+import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
+
+const emptyForm = {
+  title: "",
+  textTemplate: "",
+  chatIds: "",
+  scheduleType: "recurring",
+  intervalMinutes: 60,
+  scheduledAt: "",
+  photo: null,
+};
+
+function toLocalDatetimeInput(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
+  const [form, setForm] = useState(initial);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setError("");
+    setSaving(true);
+    try {
+      await onSubmit(form);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-3">
+      <div>
+        <Label>Название кампании</Label>
+        <Input
+          value={form.title}
+          onChange={(e) => setForm({ ...form, title: e.target.value })}
+          required
+        />
+      </div>
+
+      <div>
+        <Label>Текст сообщения</Label>
+        <Textarea
+          placeholder="{Привет|Добрый день}! Есть отличное предложение…"
+          value={form.textTemplate}
+          onChange={(e) => setForm({ ...form, textTemplate: e.target.value })}
+          required
+        />
+      </div>
+
+      <div>
+        <Label>Фото (необязательно)</Label>
+        <PhotoPicker
+          previewUrl={form.photo?.previewUrl}
+          onChange={(photo) => setForm({ ...form, photo })}
+        />
+      </div>
+
+      <div>
+        <Label>ID чатов, через запятую</Label>
+        <Input
+          placeholder="-1001234567890, 123456789"
+          value={form.chatIds}
+          onChange={(e) => setForm({ ...form, chatIds: e.target.value })}
+          required
+        />
+      </div>
+
+      <div>
+        <Label>Расписание</Label>
+        <Select
+          value={form.scheduleType}
+          onChange={(e) => setForm({ ...form, scheduleType: e.target.value })}
+        >
+          <option value="recurring">Повторять с интервалом</option>
+          <option value="once">Отправить один раз в указанное время</option>
+        </Select>
+      </div>
+
+      {form.scheduleType === "recurring" ? (
+        <div>
+          <Label>Интервал, минут</Label>
+          <Input
+            type="number"
+            min="1"
+            value={form.intervalMinutes}
+            onChange={(e) => setForm({ ...form, intervalMinutes: e.target.value })}
+          />
+        </div>
+      ) : (
+        <div>
+          <Label>Дата и время отправки</Label>
+          <Input
+            type="datetime-local"
+            value={form.scheduledAt}
+            onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
+            required
+          />
+        </div>
+      )}
+
+      {error && <p className="text-red-400 text-sm">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button type="submit" disabled={saving} className="flex-1">
+          {saving ? "Сохранение…" : submitLabel}
+        </Button>
+        {onCancel && (
+          <Button type="button" variant="secondary" onClick={onCancel}>
+            Отмена
+          </Button>
+        )}
+      </div>
+    </form>
+  );
+}
+
+function formToPayload(form) {
+  const payload = {
+    title: form.title,
+    text_template: form.textTemplate,
+    photo_path: form.photo?.path,
+    target_chat_ids: form.chatIds
+      .split(",")
+      .map((id) => Number(id.trim()))
+      .filter(Boolean),
+    schedule_type: form.scheduleType,
+  };
+  if (form.scheduleType === "recurring") {
+    payload.interval_minutes = Number(form.intervalMinutes);
+  } else {
+    payload.scheduled_at = new Date(form.scheduledAt).toISOString();
+  }
+  return payload;
+}
+
+function campaignToForm(c) {
+  return {
+    title: c.title,
+    textTemplate: c.text_template,
+    chatIds: c.target_chat_ids.join(", "),
+    scheduleType: c.schedule_type,
+    intervalMinutes: c.interval_minutes,
+    scheduledAt: toLocalDatetimeInput(c.scheduled_at),
+    photo: c.photo_url ? { path: null, previewUrl: c.photo_url } : null,
+  };
+}
+
+function CampaignCard({ campaign, accountId, onChanged }) {
+  const [editing, setEditing] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleUpdate(form) {
+    const payload = formToPayload(form);
+    if (!payload.photo_path) delete payload.photo_path;
+    if (!form.photo) payload.remove_photo = true;
+    const updated = await api.updateCampaign(accountId, campaign.id, payload);
+    onChanged(updated);
+    setEditing(false);
+  }
+
+  async function handleDelete() {
+    setError("");
+    try {
+      await api.deleteCampaign(accountId, campaign.id);
+      onChanged(null, campaign.id);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function handleToggleStatus() {
+    setError("");
+    try {
+      const updated =
+        campaign.status === "active"
+          ? await api.pauseCampaign(accountId, campaign.id)
+          : await api.resumeCampaign(accountId, campaign.id);
+      onChanged(updated);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  if (editing) {
+    return (
+      <Card>
+        <CampaignForm
+          initial={campaignToForm(campaign)}
+          submitLabel="Сохранить"
+          onSubmit={handleUpdate}
+          onCancel={() => setEditing(false)}
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="space-y-2">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex-1">
+          <div className="flex items-center gap-2">
+            <p className="font-medium">{campaign.title}</p>
+            <Badge status={campaign.status} />
+          </div>
+          <p className="text-sm text-slate-400 mt-1">{campaign.text_template}</p>
+          <p className="text-xs text-slate-500 mt-1">
+            {campaign.schedule_type === "once"
+              ? `Once: ${new Date(campaign.scheduled_at).toLocaleString("ru-RU")}`
+              : `Каждые ${campaign.interval_minutes} мин`}
+            {" · "}
+            {campaign.target_chat_ids.length} чат(ов)
+          </p>
+        </div>
+        {campaign.photo_url && (
+          <img
+            src={campaign.photo_url}
+            alt=""
+            className="h-14 w-14 rounded-lg object-cover border border-slate-700 shrink-0"
+          />
+        )}
+      </div>
+
+      {error && <p className="text-red-400 text-xs">{error}</p>}
+
+      <div className="flex gap-2 pt-1">
+        <Button variant="secondary" onClick={() => setEditing(true)}>
+          Изменить
+        </Button>
+        {campaign.status !== "finished" && (
+          <Button variant="secondary" onClick={handleToggleStatus}>
+            {campaign.status === "active" ? "Пауза" : "Запустить"}
+          </Button>
+        )}
+        <Button variant="danger" onClick={handleDelete}>
+          Удалить
+        </Button>
+      </div>
+    </Card>
+  );
+}
 
 export default function BroadcastPage({ accountId }) {
   const [campaigns, setCampaigns] = useState([]);
-  const [title, setTitle] = useState("");
-  const [textTemplate, setTextTemplate] = useState("");
-  const [chatIds, setChatIds] = useState("");
-  const [intervalMinutes, setIntervalMinutes] = useState(60);
+  const [showForm, setShowForm] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (accountId) {
-      api.listCampaigns(accountId).then(setCampaigns).catch((err) => setError(err.message));
+      api
+        .listCampaigns(accountId)
+        .then(setCampaigns)
+        .catch((err) => setError(err.message));
     }
   }, [accountId]);
 
-  async function handleCreate(e) {
-    e.preventDefault();
-    setError("");
-    try {
-      const campaign = await api.createCampaign(accountId, {
-        title,
-        text_template: textTemplate,
-        target_chat_ids: chatIds
-          .split(",")
-          .map((id) => Number(id.trim()))
-          .filter(Boolean),
-        interval_minutes: Number(intervalMinutes),
-      });
-      setCampaigns((prev) => [...prev, campaign]);
-      setTitle("");
-      setTextTemplate("");
-      setChatIds("");
-    } catch (err) {
-      setError(err.message);
-    }
+  async function handleCreate(form) {
+    const campaign = await api.createCampaign(accountId, formToPayload(form));
+    setCampaigns((prev) => [...prev, campaign]);
+    setShowForm(false);
   }
 
-  async function handlePause(campaignId) {
-    try {
-      const updated = await api.pauseCampaign(accountId, campaignId);
-      setCampaigns((prev) => prev.map((c) => (c.id === campaignId ? updated : c)));
-    } catch (err) {
-      setError(err.message);
+  function handleChanged(updated, deletedId) {
+    if (deletedId) {
+      setCampaigns((prev) => prev.filter((c) => c.id !== deletedId));
+    } else {
+      setCampaigns((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
     }
   }
 
   if (!accountId) {
-    return <p className="p-4 text-slate-400">Сначала подключите аккаунт на вкладке «Аккаунт».</p>;
+    return <p className="p-4 text-slate-400">Сначала подключите аккаунт на вкладке «Аккаунты».</p>;
   }
 
   return (
     <div className="p-4 space-y-4">
-      <h1 className="text-lg font-semibold">Рассылки</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold">Рассылки</h1>
+        {!showForm && <Button onClick={() => setShowForm(true)}>+ Кампания</Button>}
+      </div>
 
-      <form onSubmit={handleCreate} className="space-y-3">
-        <input
-          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2"
-          placeholder="Название кампании"
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          required
-        />
-        <textarea
-          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2"
-          placeholder="Текст, поддерживает {вариант1|вариант2}"
-          value={textTemplate}
-          onChange={(e) => setTextTemplate(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2"
-          placeholder="ID чатов через запятую"
-          value={chatIds}
-          onChange={(e) => setChatIds(e.target.value)}
-          required
-        />
-        <input
-          className="w-full rounded-lg bg-slate-900 border border-slate-700 px-3 py-2"
-          type="number"
-          min="1"
-          value={intervalMinutes}
-          onChange={(e) => setIntervalMinutes(e.target.value)}
-        />
-        <button className="w-full rounded-lg bg-blue-600 py-2 font-medium" type="submit">
-          Создать кампанию
-        </button>
-      </form>
+      {showForm && (
+        <Card>
+          <CampaignForm
+            initial={emptyForm}
+            submitLabel="Создать"
+            onSubmit={handleCreate}
+            onCancel={() => setShowForm(false)}
+          />
+        </Card>
+      )}
 
       {error && <p className="text-red-400 text-sm">{error}</p>}
 
-      <ul className="space-y-2">
+      <div className="space-y-3">
         {campaigns.map((c) => (
-          <li key={c.id} className="rounded-lg bg-slate-900 border border-slate-800 p-3">
-            <div className="flex items-center justify-between">
-              <p className="font-medium">{c.title}</p>
-              <span className="text-xs text-slate-400">{c.status}</span>
-            </div>
-            <p className="text-sm text-slate-400 mt-1">{c.text_template}</p>
-            {c.status === "active" && (
-              <button
-                className="mt-2 text-sm text-blue-400"
-                onClick={() => handlePause(c.id)}
-                type="button"
-              >
-                Поставить на паузу
-              </button>
-            )}
-          </li>
+          <CampaignCard key={c.id} campaign={c} accountId={accountId} onChanged={handleChanged} />
         ))}
-      </ul>
+        {campaigns.length === 0 && !showForm && (
+          <p className="text-sm text-slate-500">Кампаний пока нет — создайте первую.</p>
+        )}
+      </div>
     </div>
   );
 }

@@ -10,14 +10,13 @@
 
 ## 1. Обзор проекта
 
-Система автоматизации в Telegram, состоящая из шести компонентов:
+Система автоматизации в Telegram, состоящая из пяти компонентов:
 
 1. **Gatekeeper Bot (Bot API)** — входная точка: проверка подписки пользователя на обязательные каналы/чаты, запуск Mini App.
-2. **Telegram Mini App (Frontend)** — веб-интерфейс для авторизации аккаунтов, настройки автоответчика и рассылок.
-3. **Backend API** — обработка запросов от Mini App и Admin Panel, валидация `initData`, управление зашифрованными MTProto-сессиями.
+2. **Telegram Mini App (Frontend)** — веб-интерфейс для авторизации аккаунтов, настройки автоответчика и рассылок. Для Telegram `user_id` из `ADMIN_TELEGRAM_IDS` в нём же открывается раздел статистики — отдельной Admin Panel с логином/паролем в проекте нет.
+3. **Backend API** — обработка запросов от Mini App, валидация `initData` (в т.ч. для admin-эндпоинтов — см. 4.6), управление зашифрованными MTProto-сессиями.
 4. **Userbot Worker (MTProto Engine)** — клиентские инстансы (Pyrogram/Telethon), слушающие личные сообщения (автоответ) и отправляющие рассылки.
 5. **Task Scheduler** — планировщик периодических и отложенных задач (APScheduler / ARQ).
-6. **Admin Panel (Frontend)** — отдельный веб-интерфейс для операторов проекта: модерация пользователей, обзор кампаний и логов рассылок, управление обязательными каналами Gatekeeper Bot, системные метрики. Работает с тем же Backend API через отдельные `admin`-эндпоинты, но со своей аутентификацией (email/пароль или SSO), не через `initData`.
 
 ## 2. Стек технологий
 
@@ -26,7 +25,6 @@
 - **MTProto:** `Pyrogram` (или `hydrogram`) / `Telethon`
 - **Backend:** `FastAPI`, `Pydantic v2`, `Uvicorn`
 - **Frontend (Mini App):** React / Vite, Tailwind CSS, `@twa-dev/sdk`
-- **Frontend (Admin Panel):** React / Vite, Tailwind CSS (отдельное SPA, без Telegram SDK)
 - **БД:** PostgreSQL, SQLAlchemy (async) + Alembic
 - **Очереди/кэш:** Redis, `APScheduler` / `ARQ`
 - **Криптография:** `cryptography` (Fernet) для строк сессий в БД
@@ -39,22 +37,25 @@
 │   ├── middlewares/      # Проверка членства в чатах
 │   └── keyboards/        # Кнопки с WebAppInfo
 ├── backend/              # FastAPI сервис
-│   ├── api/              # auth, autoresponder, broadcasts, dialogs
-│   ├── admin/            # admin-эндпоинты (пользователи, кампании, каналы, метрики)
-│   ├── core/             # конфиг, безопасность (Fernet, JWT, initData hash, admin-auth)
+│   ├── api/              # auth (код+QR), autoresponder, broadcasts, dialogs, uploads, admin (по ADMIN_TELEGRAM_IDS)
+│   ├── core/             # конфиг, безопасность (Fernet, initData hash), uploads.py (сохранение фото)
 │   ├── models/           # SQLAlchemy модели
 │   ├── schemas/          # Pydantic схемы
-│   └── services/         # бизнес-логика
+│   └── services/         # бизнес-логика (stats и т.п.)
 ├── workers/              # Userbot движок и планировщик
 │   ├── client_manager.py # пул запущенных Pyrogram клиентов
 │   ├── responder.py      # обработчики on_message для автоответа
 │   ├── broadcaster.py    # логика отправки сообщений
 │   └── scheduler.py      # периодические задачи
-├── frontend/             # Telegram Mini App (React + Vite)
+├── frontend/             # Telegram Mini App (React + Vite), включает раздел статистики
 │   └── src/{api,components,pages}/
-├── admin-panel/          # Admin Panel (React + Vite, отдельное SPA)
-│   └── src/{api,components,pages}/
-├── docker-compose.yml
+├── migrations/           # Alembic-миграции
+├── scripts/setup_env.sh  # генерация .env с автосекретами
+├── docker/entrypoint.sh  # запуск миграций (RUN_MIGRATIONS=true) + exec CMD
+├── Dockerfile            # общий образ для backend/bot/worker (разный CMD в compose)
+├── Caddyfile             # реверс-прокси + авто-HTTPS для APP_DOMAIN
+├── docker-compose.yml    # полный стек: postgres, redis, backend, bot, worker, frontend, caddy
+├── DEPLOY.md             # пошаговый деплой на VPS
 ├── .env.example
 └── README.md
 ```
@@ -66,7 +67,9 @@
 ### 4.1. Безопасность MTProto-сессий
 
 - Запрещено хранить `StringSession` в открытом виде — только зашифрованной `ENCRYPTION_KEY` (Fernet) перед записью в БД.
-- Поток авторизации: `send_code(phone)` → `phone_code_hash` → `sign_in(phone, phone_code_hash, code)` → при 2FA `check_password(password)` → сохранение session string → очистка временных токенов авторизации.
+- Два способа входа, оба заканчиваются в общем `_finalize_login` (`backend/api/auth.py`): по коду — `send_code(phone)` → `phone_code_hash` → `sign_in(phone, phone_code_hash, code)` → при 2FA `check_password(password)`; по QR — `auth.exportLoginToken` (raw MTProto), опрос `/api/auth/qr/{request_id}/poll` до `LoginTokenSuccess`. Оба пути очищают временные клиенты/токены сразу после использования.
+- QR-вход не подтверждён живым тестом на реальных серверах Telegram (песочница разработки не имеет доступа к MTProto) — переход через другой дата-центр (`LoginTokenMigrateTo`) обрабатывается как явный рестарт flow, а не бесшовная миграция; при доработке смотреть `backend/api/auth.py:qr_poll`.
+- Один пользователь может подключить несколько `TelegramAccount` — уникальности по `phone`/`user_id` в схеме нет и не должно появляться.
 - Никогда не логировать: номера телефонов, коды подтверждения, пароли 2FA, session string, `api_id`/`api_hash`.
 
 ### 4.2. Валидация Mini App
@@ -92,12 +95,13 @@
 - `client_manager.py` держит клиентов строго per-`TelegramAccount`: один Pyrogram-клиент = одна расшифрованная сессия одного аккаунта. Клиенты разных `user_id` никогда не должны делить состояние, обработчики или очередь задач.
 - При остановке/удалении аккаунта клиент обязан быть корректно disconnect'нут и удалён из пула, чтобы не утекала память и не продолжали срабатывать его хендлеры.
 
-### 4.6. Admin Panel
+### 4.6. Админ-доступ внутри Mini App
 
-- Эндпоинты `/admin/*` аутентифицируются отдельно от `/api/*` (не через `initData`) — по сессии/JWT администратора с собственной ролевой моделью (`superadmin`/`operator`), не переиспользовать токены обычных пользователей.
-- Действия администратора с последствиями для пользователей (блокировка аккаунта, остановка кампании, изменение обязательных каналов Gatekeeper Bot) обязаны писаться в audit log (кто/когда/что).
-- Admin Panel не должна иметь доступа к расшифрованным session string — только к метаданным (`is_active`, статус кампаний, агрегированные логи), расшифровка происходит исключительно в `workers/`.
-- В Admin Panel обязателен раздел статистики (`/admin/stats`, страница `Dashboard`) с как минимум:
+- Отдельной Admin Panel с логином/паролем в проекте нет. Админ-функции (сейчас — статистика) живут в `backend/api/admin.py`, аутентифицируются как обычные запросы Mini App через `initData` (см. 4.2), и дополнительно проверяют, что `telegram_id` вызывающего входит в `ADMIN_TELEGRAM_IDS` (см. раздел 5) — иначе `403`.
+- Frontend скрывает раздел статистики в навигации для не-админов (запрос к `/api/admin/*` возвращает `403`), но сама проверка прав — только на backend; фронтенд ей не доверяют как единственной защите.
+- Админ-эндпоинты не должны иметь доступа к расшифрованным session string — только к метаданным (`is_active`, статус кампаний, агрегированные логи), расшифровка происходит исключительно в `workers/`.
+- Если в будущем появятся действия с последствиями для пользователей (блокировка аккаунта, остановка чужой кампании), они обязаны писаться в audit log (кто/когда/что) — не только чтение статистики.
+- В Mini App обязателен раздел статистики (`GET /api/admin/stats`) с как минимум:
   - количество пользователей всего / новых за период (день/неделя/месяц);
   - количество подключённых `TelegramAccount`, из них активных (`is_active`);
   - количество рассылок: активные/на паузе/завершённые (`BroadcastCampaign.status`);
@@ -126,6 +130,13 @@
 - Уровень `DEBUG` только для локальной разработки; в проде — `INFO`/`WARNING` и выше.
 - См. 4.1 и 6 — что именно нельзя логировать.
 
+### 4.11. Фото-вложения (автоответ и рассылки)
+
+- Загрузка — `POST /api/uploads/photo` (только `initData`, лимит `MAX_UPLOAD_BYTES`, только `jpeg/png/webp`); файл пишется в `/app/uploads/<uuid>.<ext>` (`backend/core/uploads.py`), путь хранится в `AutoresponderRule.photo_path`/`BroadcastCampaign.photo_path`.
+- Отдача — `GET /api/uploads/{filename}` **намеренно без `initData`**: `<img src>` не может передать кастомный заголовок, поэтому доступ держится на непредсказуемости UUID-имени файла; наружу в API отдаётся не `photo_path`, а вычисляемый `photo_url` (см. `_photo_url` в `backend/schemas/autoresponder.py`).
+- `/app/uploads` — общий docker volume `uploads_data`, примонтирован и в `backend` (запись при загрузке), и в `worker` (чтение при отправке через `send_photo`/`reply_photo`). Новый сервис, которому нужны фото, обязан подключить тот же volume.
+- При удалении/замене фото у правила или кампании (`remove_photo` / новый `photo_path` в PATCH) — старый файл удаляется с диска (`delete_upload`), не копится мусор.
+
 ## 5. Переменные окружения
 
 Полный список — в `.env.example`. Обязательные для запуска:
@@ -138,7 +149,8 @@
 | `ENCRYPTION_KEY` | Ключ Fernet для шифрования session string |
 | `DATABASE_URL` | Строка подключения PostgreSQL |
 | `REDIS_URL` | Подключение Redis (кэш, очереди, rate limit) |
-| `JWT_SECRET` | Подпись внутренних токенов backend (если используются) |
+| `APP_DOMAIN` | Домен Mini App, обслуживаемый Caddy (авто-HTTPS) |
+| `ADMIN_TELEGRAM_IDS` | Telegram `user_id` (через запятую) с доступом к разделу статистики в Mini App (см. 4.6) |
 
 Новые переменные добавлять сразу в `.env.example` (с плейсхолдером, не реальным значением) в том же PR, где они появляются в коде.
 
@@ -173,7 +185,7 @@ python -m workers.scheduler
 
 - [ ] Не логируются чувствительные данные (телефоны, коды, 2FA-пароли, session string).
 - [ ] Асинхронный жизненный цикл Pyrogram-клиента (запуск/остановка/дисконнект) обработан корректно.
-- [ ] Новые эндпоинты `/api/*` закрыты middleware-проверкой `initData` и, если инициируют внешние действия, rate limit'ом (4.6).
+- [ ] Новые эндпоинты `/api/*` закрыты middleware-проверкой `initData` и, если инициируют внешние действия, rate limit'ом (4.7); новые `/api/admin/*` дополнительно проверяют `ADMIN_TELEGRAM_IDS` (4.6).
 - [ ] Новые методы отправки учитывают `FloodWait`, задержки, cooldown и подпись `Отправлено через @{BOT_USERNAME}` (см. 4.3).
 - [ ] Клиенты разных аккаунтов не делят состояние (см. 4.5).
 - [ ] Новые переменные окружения добавлены в `.env.example`.

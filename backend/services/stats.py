@@ -1,17 +1,12 @@
 from datetime import UTC, datetime, timedelta
 
-from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.admin.deps import get_current_admin
-from backend.db.session import get_db
 from backend.models.broadcast import BroadcastCampaign, BroadcastLog
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
-
-router = APIRouter(prefix="/admin/stats", tags=["admin-stats"])
 
 
 class DashboardStats(BaseModel):
@@ -26,11 +21,9 @@ class DashboardStats(BaseModel):
     messages_failed_24h: int
 
 
-@router.get("", response_model=DashboardStats)
-async def dashboard(
-    _admin: dict = Depends(get_current_admin),
-    db: AsyncSession = Depends(get_db),
-) -> DashboardStats:
+async def collect_dashboard_stats(db: AsyncSession) -> DashboardStats:
+    """Aggregates for the admin dashboard, per AGENTS.md 4.6. Computed as SQL
+    aggregates, not by paging through BroadcastLog in Python."""
     since_7d = datetime.now(UTC) - timedelta(days=7)
     since_24h = datetime.now(UTC) - timedelta(hours=24)
 

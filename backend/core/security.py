@@ -4,7 +4,6 @@ import time
 from urllib.parse import parse_qsl
 
 from cryptography.fernet import Fernet
-from jose import JWTError, jwt
 
 from backend.core.config import settings
 
@@ -50,20 +49,3 @@ def parse_and_verify_init_data(init_data: str) -> dict:
         raise InitDataError("invalid hash")
 
     return pairs
-
-
-def create_admin_token(admin_id: str, role: str) -> str:
-    payload = {
-        "sub": admin_id,
-        "role": role,
-        "iat": int(time.time()),
-        "exp": int(time.time()) + 12 * 60 * 60,
-    }
-    return jwt.encode(payload, settings.admin_jwt_secret, algorithm="HS256")
-
-
-def decode_admin_token(token: str) -> dict:
-    try:
-        return jwt.decode(token, settings.admin_jwt_secret, algorithms=["HS256"])
-    except JWTError as exc:
-        raise InitDataError("invalid admin token") from exc

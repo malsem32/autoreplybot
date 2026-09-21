@@ -29,3 +29,14 @@ class TelegramAccountOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class QrStartResponse(BaseModel):
+    request_id: str
+    qr_url: str
+
+
+class QrPollResponse(BaseModel):
+    status: str  # pending | success | restart
+    qr_url: str | None = None
+    account: TelegramAccountOut | None = None
