@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import JSON, BigInteger, DateTime, ForeignKey, Integer, String
+from sqlalchemy import JSON, BigInteger, Boolean, DateTime, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from backend.models.base import Base, TimestampMixin
@@ -18,6 +18,10 @@ class BroadcastCampaign(TimestampMixin, Base):
     # Each entry: numeric chat id as a string, "@username", or a t.me/... link
     # (including invite links) — resolved at send time, see workers/targets.py.
     target_chats: Mapped[list[str]] = mapped_column(JSON, default=list)
+
+    # When enabled, every `​` (zero-width space) in `text_template` is
+    # replaced per-chat with mentions of 5 random members of that chat.
+    tag_random_users: Mapped[bool] = mapped_column(Boolean, default=False)
 
     schedule_type: Mapped[str] = mapped_column(String(16), default="recurring")  # recurring | once
     interval_minutes: Mapped[int] = mapped_column(Integer, default=60)

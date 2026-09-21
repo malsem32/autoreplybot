@@ -9,9 +9,12 @@ from backend.api.deps import get_current_user
 from backend.core.config import settings
 from backend.core.security import encrypt_secret
 from backend.db.session import get_db
+from backend.models.feature_settings import TagFeatureSetting
 from backend.models.proxy import Proxy
 from backend.models.user import User
+from backend.schemas.feature import TagFeatureSettingsOut, TagFeatureSettingsUpdate
 from backend.schemas.proxy import ProxyIn, ProxyOut, ProxyUpdate
+from backend.services import tag_feature
 from backend.services.proxy_check import check_proxy
 from backend.services.stats import DashboardStats, collect_dashboard_stats
 
@@ -33,6 +36,28 @@ async def stats(
     db: AsyncSession = Depends(get_db),
 ) -> DashboardStats:
     return await collect_dashboard_stats(db)
+
+
+@router.get("/tag-feature", response_model=TagFeatureSettingsOut)
+async def get_tag_feature_settings(
+    _admin: User = Depends(require_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> TagFeatureSetting:
+    return await tag_feature.get_settings(db)
+
+
+@router.patch("/tag-feature", response_model=TagFeatureSettingsOut)
+async def update_tag_feature_settings(
+    payload: TagFeatureSettingsUpdate,
+    _admin: User = Depends(require_admin_user),
+    db: AsyncSession = Depends(get_db),
+) -> TagFeatureSetting:
+    row = await tag_feature.get_settings(db)
+    for field, value in payload.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    await db.commit()
+    await db.refresh(row)
+    return row
 
 
 async def _get_proxy(db: AsyncSession, proxy_id: int) -> Proxy:

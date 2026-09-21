@@ -72,6 +72,11 @@ export const api = {
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/logs`),
 
   adminStats: () => request("/admin/stats"),
+  adminGetTagFeature: () => request("/admin/tag-feature"),
+  adminUpdateTagFeature: (patch) => request("/admin/tag-feature", { method: "PATCH", body: patch }),
+
+  getTagFeatureStatus: () => request("/features/tag-broadcast"),
+  createTagFeatureInvoice: () => request("/features/tag-broadcast/invoice", { method: "POST" }),
 
   listProxies: () => request("/admin/proxies"),
   createProxy: (proxy) => request("/admin/proxies", { method: "POST", body: proxy }),
