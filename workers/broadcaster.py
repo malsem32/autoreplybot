@@ -41,9 +41,10 @@ async def _random_member_mentions(client: Client, chat_id: int) -> str:
         return ""
 
     chosen = random.sample(members, k=min(TAG_COUNT, len(members)))
-    return " ".join(
-        f"[{user.first_name or user.username or 'user'}](tg://user?id={user.id})" for user in chosen
-    )
+    # Link text is the zero-width space itself, not the member's name: the
+    # mentions must stay invisible in the rendered message (see AGENTS.md
+    # 4.13/4.8) while still notifying the tagged member.
+    return "".join(f"[{TAG_PLACEHOLDER}](tg://user?id={user.id})" for user in chosen)
 
 
 async def _resolve_tag_placeholder(

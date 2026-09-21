@@ -50,6 +50,15 @@ async def test_placeholder_replaced_with_mentions_of_real_members_only():
     )
     text = f"hi{TAG_PLACEHOLDER}"
     result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=True)
-    assert "tg://user?id=1" in result
+    assert result == f"hi[{TAG_PLACEHOLDER}](tg://user?id=1)"
     assert "tg://user?id=2" not in result
-    assert TAG_PLACEHOLDER not in result
+
+
+async def test_mentions_stay_invisible_no_names_leak_into_the_message():
+    client = _FakeClient(
+        [_FakeMember(_FakeUser(id=1, first_name="Alice", username="alice_handle"))]
+    )
+    text = f"hi{TAG_PLACEHOLDER}"
+    result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=True)
+    assert "Alice" not in result
+    assert "alice_handle" not in result
