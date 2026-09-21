@@ -10,6 +10,7 @@ class BroadcastCampaignIn(BaseModel):
     text_template: str
     photo_path: str | None = None
     target_chat_ids: list[int]
+    tag_random_users: bool = False
     schedule_type: str = Field(pattern="^(recurring|once)$", default="recurring")
     interval_minutes: int = Field(ge=1, default=60)
     scheduled_at: datetime | None = None
@@ -27,6 +28,7 @@ class BroadcastCampaignUpdate(BaseModel):
     photo_path: str | None = None
     remove_photo: bool = False
     target_chat_ids: list[int] | None = None
+    tag_random_users: bool | None = None
     schedule_type: str | None = Field(pattern="^(recurring|once)$", default=None)
     interval_minutes: int | None = Field(ge=1, default=None)
     scheduled_at: datetime | None = None
@@ -39,6 +41,7 @@ class BroadcastCampaignOut(BaseModel):
     text_template: str
     photo_path: str | None = Field(exclude=True, default=None)
     target_chat_ids: list[int]
+    tag_random_users: bool
     schedule_type: str
     interval_minutes: int
     scheduled_at: datetime | None

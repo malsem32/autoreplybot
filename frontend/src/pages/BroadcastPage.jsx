@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api/client.js";
 import PhotoPicker from "../components/PhotoPicker.jsx";
 import Badge from "../components/ui/Badge.jsx";
@@ -6,10 +6,16 @@ import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
 
+// Zero-width space: a placeholder a user can drop into the message text.
+// When "tag random users" is on, the broadcaster replaces each occurrence
+// with mentions of 5 random members of that chat; otherwise it's stripped.
+const TAG_PLACEHOLDER = "​";
+
 const emptyForm = {
   title: "",
   textTemplate: "",
   chatIds: "",
+  tagRandomUsers: false,
   scheduleType: "recurring",
   intervalMinutes: 60,
   scheduledAt: "",
@@ -27,6 +33,20 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
   const [form, setForm] = useState(initial);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const textareaRef = useRef(null);
+
+  function insertTagPlaceholder() {
+    const el = textareaRef.current;
+    const pos = el ? el.selectionStart : form.textTemplate.length;
+    const text = form.textTemplate;
+    const next = text.slice(0, pos) + TAG_PLACEHOLDER + text.slice(pos);
+    setForm({ ...form, textTemplate: next });
+    requestAnimationFrame(() => {
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(pos + 1, pos + 1);
+    });
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -55,11 +75,28 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel }) {
       <div>
         <Label>Текст сообщения</Label>
         <Textarea
+          ref={textareaRef}
           placeholder="{Привет|Добрый день}! Есть отличное предложение…"
           value={form.textTemplate}
           onChange={(e) => setForm({ ...form, textTemplate: e.target.value })}
           required
         />
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <Button type="button" variant="secondary" onClick={insertTagPlaceholder}>
+            + Метка для тегов
+          </Button>
+          <Button
+            type="button"
+            variant={form.tagRandomUsers ? "primary" : "secondary"}
+            onClick={() => setForm({ ...form, tagRandomUsers: !form.tagRandomUsers })}
+          >
+            Теги случайных участников: {form.tagRandomUsers ? "Вкл" : "Выкл"}
+          </Button>
+        </div>
+        <p className="text-xs text-slate-500 mt-1">
+          Вставьте метку в текст — при отправке она заменится на упоминание 5 случайных
+          участников чата (если теги включены), иначе просто удалится.
+        </p>
       </div>
 
       <div>
@@ -138,6 +175,7 @@ function formToPayload(form) {
       .split(",")
       .map((id) => Number(id.trim()))
       .filter(Boolean),
+    tag_random_users: form.tagRandomUsers,
     schedule_type: form.scheduleType,
   };
   if (form.scheduleType === "recurring") {
@@ -153,6 +191,7 @@ function campaignToForm(c) {
     title: c.title,
     textTemplate: c.text_template,
     chatIds: c.target_chat_ids.join(", "),
+    tagRandomUsers: c.tag_random_users,
     scheduleType: c.schedule_type,
     intervalMinutes: c.interval_minutes,
     scheduledAt: toLocalDatetimeInput(c.scheduled_at),
@@ -224,6 +263,7 @@ function CampaignCard({ campaign, accountId, onChanged }) {
               : `Каждые ${campaign.interval_minutes} мин`}
             {" · "}
             {campaign.target_chat_ids.length} чат(ов)
+            {campaign.tag_random_users && " · теги случайных участников"}
           </p>
         </div>
         {campaign.photo_url && (
