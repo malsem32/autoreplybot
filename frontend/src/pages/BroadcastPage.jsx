@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import WebApp from "@twa-dev/sdk";
 import { api } from "../api/client.js";
 import CampaignLogsModal from "../components/CampaignLogsModal.jsx";
@@ -8,11 +8,6 @@ import Button from "../components/ui/Button.jsx";
 import Card from "../components/ui/Card.jsx";
 import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
 import PageHeader from "../components/ui/PageHeader.jsx";
-
-// Zero-width space: a placeholder a user can drop into the message text.
-// When "tag random users" is on, the broadcaster replaces each occurrence
-// with mentions of 5 random members of that chat; otherwise it's stripped.
-const TAG_PLACEHOLDER = "​";
 
 const emptyForm = {
   title: "",
@@ -37,7 +32,6 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [buying, setBuying] = useState(false);
-  const textareaRef = useRef(null);
 
   const tagAccess = tagFeature?.has_access ?? false;
 
@@ -58,19 +52,6 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
       setError(err.message);
       setBuying(false);
     }
-  }
-
-  function insertTagPlaceholder() {
-    const el = textareaRef.current;
-    const pos = el ? el.selectionStart : form.textTemplate.length;
-    const text = form.textTemplate;
-    const next = text.slice(0, pos) + TAG_PLACEHOLDER + text.slice(pos);
-    setForm({ ...form, textTemplate: next });
-    requestAnimationFrame(() => {
-      if (!el) return;
-      el.focus();
-      el.setSelectionRange(pos + 1, pos + 1);
-    });
   }
 
   async function handleSubmit(e) {
@@ -100,16 +81,12 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
       <div>
         <Label>Текст сообщения</Label>
         <Textarea
-          ref={textareaRef}
           placeholder="{Привет|Добрый день}! Есть отличное предложение…"
           value={form.textTemplate}
           onChange={(e) => setForm({ ...form, textTemplate: e.target.value })}
           required
         />
-        <div className="flex items-center justify-between gap-2 mt-1.5 flex-wrap">
-          <Button type="button" variant="secondary" onClick={insertTagPlaceholder}>
-            + Метка для тегов
-          </Button>
+        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
           {tagAccess ? (
             <Button
               type="button"
@@ -127,8 +104,8 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
           )}
         </div>
         <p className="text-xs text-slate-500 mt-1">
-          Вставьте метку в текст — при отправке она заменится на упоминание 5 случайных
-          участников чата (если теги включены), иначе просто удалится.
+          Если теги включены, к концу каждого сообщения незаметно добавляются упоминания 5
+          случайных участников чата.
           {tagFeature && !tagFeature.is_admin && tagFeature.expires_at && (
             <>
               {" "}

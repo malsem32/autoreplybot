@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from workers.broadcaster import TAG_PLACEHOLDER, _resolve_tag_placeholder
+from workers.broadcaster import TAG_PLACEHOLDER, _append_random_tags
 
 
 @dataclass
@@ -26,21 +26,21 @@ class _FakeClient:
             yield member
 
 
-async def test_placeholder_stripped_when_tag_random_users_is_off():
+async def test_nothing_appended_when_tag_random_users_is_off():
     client = _FakeClient([_FakeMember(_FakeUser(id=1, first_name="A"))])
-    text = f"hello{TAG_PLACEHOLDER}world"
-    result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=False)
-    assert result == "helloworld"
+    text = "hello"
+    result = await _append_random_tags(client, chat_id=1, text=text, tag_random_users=False)
+    assert result == "hello"
 
 
-async def test_placeholder_untouched_when_absent():
-    client = _FakeClient([])
-    text = "no placeholder here"
-    result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=True)
-    assert result == text
+async def test_nothing_appended_when_chat_has_no_taggable_members():
+    client = _FakeClient([_FakeMember(_FakeUser(id=2, first_name="Bot", is_bot=True))])
+    text = "hello"
+    result = await _append_random_tags(client, chat_id=1, text=text, tag_random_users=True)
+    assert result == "hello"
 
 
-async def test_placeholder_replaced_with_mentions_of_real_members_only():
+async def test_mentions_of_real_members_appended_at_the_end():
     client = _FakeClient(
         [
             _FakeMember(_FakeUser(id=1, first_name="Alice")),
@@ -48,8 +48,8 @@ async def test_placeholder_replaced_with_mentions_of_real_members_only():
             _FakeMember(None),
         ]
     )
-    text = f"hi{TAG_PLACEHOLDER}"
-    result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=True)
+    text = "hi"
+    result = await _append_random_tags(client, chat_id=1, text=text, tag_random_users=True)
     assert result == f"hi[{TAG_PLACEHOLDER}](tg://user?id=1)"
     assert "tg://user?id=2" not in result
 
@@ -58,7 +58,6 @@ async def test_mentions_stay_invisible_no_names_leak_into_the_message():
     client = _FakeClient(
         [_FakeMember(_FakeUser(id=1, first_name="Alice", username="alice_handle"))]
     )
-    text = f"hi{TAG_PLACEHOLDER}"
-    result = await _resolve_tag_placeholder(client, chat_id=1, text=text, tag_random_users=True)
+    result = await _append_random_tags(client, chat_id=1, text="hi", tag_random_users=True)
     assert "Alice" not in result
     assert "alice_handle" not in result

@@ -84,13 +84,34 @@ async def list_accounts(
     return list(result.scalars().all())
 
 
+async def _connect_for_send_code(phone: str, proxy: dict | None) -> Client:
+    """Connects a fresh client for `/send_code`, falling back to a direct
+    connection if a proxy from the pool fails: `Proxy.last_status` only
+    reflects a bare TCP connect (see AGENTS.md 4.12), so a proxy marked
+    "alive" can still fail the real MTProto handshake — that shouldn't
+    block every login until an admin notices and deactivates it."""
+    client = _new_client(f"login_{phone}", proxy=proxy)
+    try:
+        await client.connect()
+        return client
+    except Exception:
+        if proxy is None:
+            raise
+    client = _new_client(f"login_{phone}")
+    await client.connect()
+    return client
+
+
 @router.post("/send_code", response_model=SendCodeResponse)
 async def send_code(
     payload: SendCodeRequest, db: AsyncSession = Depends(get_db)
 ) -> SendCodeResponse:
     proxy = await _pick_send_code_proxy(db)
-    client = _new_client(f"login_{payload.phone}", proxy=proxy)
-    await client.connect()
+    try:
+        client = await _connect_for_send_code(payload.phone, proxy)
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+
     try:
         sent = await client.send_code(payload.phone)
     except Exception as exc:
@@ -165,7 +186,10 @@ async def qr_start(_user: User = Depends(get_current_user)) -> QrStartResponse:
     Telegram app; poll `/qr/{request_id}/poll` for the outcome."""
     request_id = uuid.uuid4().hex
     client = _new_client(f"qr_{request_id}")
-    await client.connect()
+    try:
+        await client.connect()
+    except Exception as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
 
     event = asyncio.Event()
 

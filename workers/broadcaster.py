@@ -18,9 +18,7 @@ from workers.targets import resolve_target
 MIN_DELAY_SECONDS = 20
 MAX_DELAY_SECONDS = 45
 
-# Placeholder character a user can drop into `text_template`; when
-# `tag_random_users` is on it's replaced per-chat with mentions of 5
-# random chat members, otherwise it's stripped out.
+# Zero-width space used as the (invisible) link text for each tag mention.
 TAG_PLACEHOLDER = "​"
 TAG_COUNT = 5
 
@@ -47,18 +45,19 @@ async def _random_member_mentions(client: Client, chat_id: int) -> str:
     return "".join(f"[{TAG_PLACEHOLDER}](tg://user?id={user.id})" for user in chosen)
 
 
-async def _resolve_tag_placeholder(
+async def _append_random_tags(
     client: Client, chat_id: int, text: str, tag_random_users: bool
 ) -> str:
-    if TAG_PLACEHOLDER not in text:
+    """Appends 5 invisible mentions of random chat members to the end of
+    `text` when the campaign has `tag_random_users` on; no placeholder or
+    manual insertion needed."""
+    if not tag_random_users:
         return text
-    mentions = ""
-    if tag_random_users:
-        try:
-            mentions = await _random_member_mentions(client, chat_id)
-        except Exception:  # noqa: BLE001 - fall back to stripping the placeholder
-            mentions = ""
-    return text.replace(TAG_PLACEHOLDER, mentions)
+    try:
+        mentions = await _random_member_mentions(client, chat_id)
+    except Exception:  # noqa: BLE001 - send the message untagged rather than not at all
+        mentions = ""
+    return text + mentions
 
 
 async def _has_tag_feature_access(db: AsyncSession, campaign: BroadcastCampaign) -> bool:
@@ -88,7 +87,7 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
         while True:
             try:
                 chat_id = await resolve_target(client, raw_target)
-                text = await _resolve_tag_placeholder(client, chat_id, base_text, tag_enabled)
+                text = await _append_random_tags(client, chat_id, base_text, tag_enabled)
                 if campaign.photo_path:
                     await client.send_photo(chat_id, campaign.photo_path, caption=text)
                 else:
