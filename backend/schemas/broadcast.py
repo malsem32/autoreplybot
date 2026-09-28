@@ -11,6 +11,7 @@ PRO_CAMPAIGN_FIELDS = (
     "protect_content",
     "auto_disable_failing",
     "notify_report",
+    "hide_signature",
 )
 
 
@@ -25,6 +26,7 @@ class BroadcastCampaignIn(BaseModel):
     disable_link_preview: bool = False
     auto_disable_failing: bool = False
     notify_report: bool = False
+    hide_signature: bool = False
     schedule_type: str = Field(pattern="^(recurring|once)$", default="recurring")
     interval_minutes: int = Field(ge=1, default=60)
     scheduled_at: datetime | None = None
@@ -48,6 +50,7 @@ class BroadcastCampaignUpdate(BaseModel):
     disable_link_preview: bool | None = None
     auto_disable_failing: bool | None = None
     notify_report: bool | None = None
+    hide_signature: bool | None = None
     # Lets the owner bring auto-disabled chats back (only shrinking is allowed).
     disabled_targets: list[str] | None = None
     schedule_type: str | None = Field(pattern="^(recurring|once)$", default=None)
@@ -68,6 +71,7 @@ class BroadcastCampaignOut(BaseModel):
     disable_link_preview: bool
     auto_disable_failing: bool
     notify_report: bool
+    hide_signature: bool
     disabled_targets: list[str]
     schedule_type: str
     interval_minutes: int

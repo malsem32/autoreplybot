@@ -32,11 +32,13 @@ _PRO_OPTION_MESSAGES = {
     "protect_content": "Защита от пересылки доступна в Pro",
     "auto_disable_failing": "Автоотключение недоступных чатов доступно в Pro",
     "notify_report": "Отчёты о рассылке доступны в Pro",
+    "hide_signature": "Рассылка без подписи бота доступна в Pro",
 }
 
 
 def _require_pro_for_options(owner: User, data: dict) -> None:
-    """Tags, forward protection, auto-disabling and reports are Pro
+    """Tags, forward protection, auto-disabling, reports and hiding the
+    signature are Pro
     (AGENTS.md 4.13) — of the account *owner*; switching them off is always
     allowed."""
     if pro.has_access(owner):

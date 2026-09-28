@@ -30,7 +30,10 @@ TAG_COUNT = 5
 AUTO_DISABLE_AFTER_FAILURES = 3
 
 
-def _with_signature(text: str) -> str:
+def with_signature(text: str, hide: bool = False) -> str:
+    """Appends the mandatory bot signature; only Pro may hide it (AGENTS.md 4.3)."""
+    if hide:
+        return text
     return f"{text}\n\nОтправлено через @{settings.bot_username}"
 
 
@@ -113,13 +116,15 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
 
     Per AGENTS.md 4.3: random 20-45s delay between chats, FloodWait is
     always caught and slept out (never retried immediately), spintax is
-    resolved per-recipient, and every message carries the bot signature.
+    resolved per-recipient, and every message carries the bot signature
+    unless the owner has Pro and turned it off.
     Pro features are re-checked on every run (AGENTS.md 4.13).
     """
     owner = await _owner(db, campaign)
     is_pro = owner is not None and pro.has_access(owner)
     tag_enabled = campaign.tag_random_users and is_pro
     auto_disable = campaign.auto_disable_failing and is_pro
+    hide_signature = campaign.hide_signature and is_pro
     # An album saved while Pro was active shrinks to the free limit once the
     # subscription expires.
     max_photos = pro.PRO_MAX_PHOTOS if is_pro else pro.FREE_MAX_PHOTOS
@@ -139,7 +144,7 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
                 return
             if campaign.status != "active":
                 return
-        base_text = _with_signature(render_spintax(campaign.text_template))
+        base_text = with_signature(render_spintax(campaign.text_template), hide_signature)
 
         while True:
             try:

@@ -118,7 +118,7 @@ async def test_free_plan_rule_limit(api, db_sessionmaker, upload_dir, monkeypatc
 async def test_tags_and_forward_protection_need_pro(api, db_sessionmaker, monkeypatch):
     monkeypatch.setattr(settings, "admin_telegram_ids", "")
     account_id = await _account(api, db_sessionmaker)
-    for option in ("tag_random_users", "protect_content"):
+    for option in ("tag_random_users", "protect_content", "hide_signature"):
         resp = await api.post(
             f"/api/broadcasts/{account_id}/campaigns",
             json=_campaign(**{option: True}),

@@ -35,6 +35,8 @@ class BroadcastCampaign(TimestampMixin, Base):
     disabled_targets: Mapped[list[str]] = mapped_column(JSON, default=list)
     # Pro: the bot sends the owner a delivery report after every run.
     notify_report: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Pro: drop the "Отправлено через @bot" signature (AGENTS.md 4.3).
+    hide_signature: Mapped[bool] = mapped_column(Boolean, default=False)
 
     schedule_type: Mapped[str] = mapped_column(String(16), default="recurring")  # recurring | once
     interval_minutes: Mapped[int] = mapped_column(Integer, default=60)

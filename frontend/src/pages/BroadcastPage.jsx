@@ -3,6 +3,7 @@ import {
   BarChart3,
   BellOff,
   Crown,
+  EyeOff,
   FileBarChart,
   History,
   LinkIcon,
@@ -81,6 +82,7 @@ const emptyForm = () => ({
   disableLinkPreview: false,
   autoDisableFailing: false,
   notifyReport: false,
+  hideSignature: false,
 });
 
 function campaignToForm(c) {
@@ -100,6 +102,7 @@ function campaignToForm(c) {
     disableLinkPreview: c.disable_link_preview,
     autoDisableFailing: c.auto_disable_failing,
     notifyReport: c.notify_report,
+    hideSignature: c.hide_signature,
   };
 }
 
@@ -116,6 +119,7 @@ function formToPayload(form) {
     disable_link_preview: form.disableLinkPreview,
     auto_disable_failing: form.autoDisableFailing,
     notify_report: form.notifyReport,
+    hide_signature: form.hideSignature,
   };
   if (form.scheduleType === "recurring") {
     payload.interval_minutes =
@@ -142,7 +146,8 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const invalid = !form.title.trim() || !form.text.trim() || form.targets.length === 0;
-  const signature = pro?.bot_username ? `Отправлено через @${pro.bot_username}` : "";
+  const botSignature = pro?.bot_username ? `Отправлено через @${pro.bot_username}` : "";
+  const signature = form.hideSignature && hasPro ? "" : botSignature;
 
   async function save() {
     setError("");
@@ -156,6 +161,7 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
         payload.protect_content = false;
         payload.auto_disable_failing = false;
         payload.notify_report = false;
+        payload.hide_signature = false;
       }
       await onSave(payload);
       haptic.success();
@@ -333,6 +339,14 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
             onChange={(v) => set({ notifyReport: v })}
             proOnly
           />
+          <OptionRow
+            icon={EyeOff}
+            title="Без подписи бота"
+            subtitle={`Не добавлять «${botSignature || "Отправлено через бота"}»`}
+            checked={form.hideSignature}
+            onChange={(v) => set({ hideSignature: v })}
+            proOnly
+          />
         </ListGroup>
 
         {(form.text || form.photos.length > 0) && (
@@ -340,7 +354,9 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
             <Label>Предпросмотр</Label>
             <MessagePreview text={form.text} photos={form.photos} signature={signature} />
             <p className="mt-1.5 text-xs text-faint">
-              Подпись о сервисе добавляется автоматически.
+              {signature
+                ? "Подпись о сервисе добавляется автоматически. В Pro её можно убрать."
+                : "Сообщение уйдёт без подписи бота."}
             </p>
           </div>
         )}

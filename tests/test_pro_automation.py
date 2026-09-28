@@ -15,7 +15,7 @@ from backend.models.user import User
 from backend.services import pro
 from backend.services.schedule import is_within_schedule
 from tests.helpers import auth_headers
-from workers.broadcaster import report_text, should_disable
+from workers.broadcaster import report_text, should_disable, with_signature
 from workers.responder import is_new_contact, owner_recently_active
 
 WEEKDAYS = list(range(5))  # Mon–Fri
@@ -76,6 +76,12 @@ def test_auto_disable_needs_consecutive_failures():
     assert not should_disable(["error", "error"])
     assert not should_disable(["error", "success", "error"])
     assert should_disable(["error", "error", "error", "success"])  # newest first
+
+
+def test_signature_is_added_unless_hidden(monkeypatch):
+    monkeypatch.setattr(settings, "bot_username", "testbot")
+    assert with_signature("Привет").endswith("\n\nОтправлено через @testbot")
+    assert with_signature("Привет", hide=True) == "Привет"
 
 
 def test_report_escapes_titles_and_lists_disabled_chats():
@@ -260,3 +266,42 @@ async def test_admin_stats_include_autoreplies_and_flood_waits(api, monkeypatch)
         "pro_active",
     ):
         assert key in stats
+
+
+@pytest.mark.parametrize(("pro_days", "signed"), [(5, False), (0, True)])
+async def test_worker_hides_signature_only_with_pro(db_sessionmaker, monkeypatch, pro_days, signed):
+    from workers import broadcaster
+
+    monkeypatch.setattr(settings, "admin_telegram_ids", "")
+    sent_texts: list[str] = []
+
+    async def fake_resolve(_client, _target):
+        return 100
+
+    async def fake_send(_client, _chat_id, text, *_args, **_kwargs):
+        sent_texts.append(text)
+
+    monkeypatch.setattr(broadcaster, "resolve_target", fake_resolve)
+    monkeypatch.setattr(broadcaster, "send_content", fake_send)
+
+    async with db_sessionmaker() as db:
+        expires = datetime.now(UTC) + timedelta(days=pro_days) if pro_days else None
+        user = User(telegram_id=77, pro_expires_at=expires)
+        db.add(user)
+        await db.flush()
+        account = TelegramAccount(user_id=user.id, phone="7999", encrypted_session="x")
+        db.add(account)
+        await db.flush()
+        campaign = BroadcastCampaign(
+            account_id=account.id,
+            title="t",
+            text_template="Привет",
+            target_chats=["@a"],
+            hide_signature=True,
+        )
+        db.add(campaign)
+        await db.commit()
+        await broadcaster.run_campaign(object(), db, campaign)  # type: ignore[arg-type]
+
+    assert len(sent_texts) == 1
+    assert ("Отправлено через @" in sent_texts[0]) is signed
