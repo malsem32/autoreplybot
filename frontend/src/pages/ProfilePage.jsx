@@ -3,7 +3,9 @@ import { BarChart3, Copy, Crown, Gift, Globe, Share2, Star } from "lucide-react"
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
+import DigestToggle from "../components/DigestToggle.jsx";
 import PageTitle from "../components/PageTitle.jsx";
+import TeamCard from "../components/TeamCard.jsx";
 import {
   defaultPlan,
   formatDate,
@@ -175,6 +177,8 @@ export default function ProfilePage() {
     <div className="space-y-4 p-4">
       <PageTitle title="Профиль" />
       <ProCard />
+      <TeamCard />
+      <DigestToggle />
       <ReferralCard />
       {isAdmin && (
         <ListGroup title="Администрирование">

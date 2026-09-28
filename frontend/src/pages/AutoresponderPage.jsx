@@ -7,8 +7,10 @@ import {
   Keyboard,
   MessageCircleReply,
   Plus,
+  FlaskConical,
   Trash2,
   UserPlus,
+  UsersRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
@@ -64,8 +66,22 @@ function browserTimezone() {
   }
 }
 
+const MATCH_MODES = [
+  { value: "contains", label: "Содержит" },
+  { value: "word", label: "Целое слово" },
+  { value: "exact", label: "Точно" },
+];
+
+const MATCH_HINTS = {
+  contains: "«цен» сработает на «цена», «ценник», «бесценно»",
+  word: "«цена» сработает на «а цена?», но не на «ценами»",
+  exact: "Сообщение должно совпадать со словом целиком",
+};
+
 const emptyForm = () => ({
   triggerType: "all",
+  matchMode: "contains",
+  scope: "private",
   keywords: [],
   responseText: "",
   cooldownHours: 3,
@@ -84,6 +100,8 @@ const emptyForm = () => ({
 function ruleToForm(rule) {
   return {
     triggerType: rule.trigger_type,
+    matchMode: rule.match_mode,
+    scope: rule.scope,
     keywords: rule.keywords,
     responseText: rule.response_text,
     cooldownHours: Math.max(1, Math.round(rule.cooldown_seconds / 3600)),
@@ -104,6 +122,8 @@ function formToPayload(form, hasPro) {
   return {
     trigger_type: form.triggerType,
     keywords: form.triggerType === "keywords" ? form.keywords : [],
+    match_mode: form.matchMode,
+    scope: hasPro ? form.scope : "private",
     response_text: form.responseText,
     photos: photoRefs(form.photos),
     cooldown_seconds: Math.max(1, Number(form.cooldownHours)) * 3600,
@@ -178,7 +198,7 @@ function ScheduleEditor({ form, set }) {
 }
 
 function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
-  const { pro } = useApp();
+  const { pro, openPaywall } = useApp();
   const hasPro = Boolean(pro?.has_access);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
@@ -260,9 +280,40 @@ function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
                   placeholder="цена, доставка, купить"
                 />
               </Field>
+              <div className="mt-3">
+                <ChoiceChips
+                  value={form.matchMode}
+                  onChange={(matchMode) => set({ matchMode })}
+                  options={MATCH_MODES}
+                />
+                <p className="mt-1.5 text-xs text-faint">{MATCH_HINTS[form.matchMode]}</p>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
+
+        <div>
+          <Label>Где отвечать</Label>
+          <Segmented
+            value={hasPro ? form.scope : "private"}
+            onChange={(scope) =>
+              scope !== "private" && !hasPro
+                ? openPaywall("Ответы в группах — функция Pro")
+                : set({ scope })
+            }
+            options={[
+              { value: "private", label: "В личке" },
+              { value: "groups", label: "В группах", icon: hasPro ? null : Crown },
+              { value: "all", label: "Везде", icon: hasPro ? null : Crown },
+            ]}
+          />
+          {hasPro && form.scope !== "private" && (
+            <p className="mt-1.5 text-xs leading-snug text-faint">
+              В группах автопилот отвечает, только когда вас упомянули или ответили на ваше
+              сообщение.
+            </p>
+          )}
+        </div>
 
         <Field label="Ответ" htmlFor="reply">
           <RichTextEditor
@@ -360,12 +411,114 @@ function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
   );
 }
 
+function RuleTester({ accountId, rules }) {
+  const [text, setText] = useState("");
+  const [inGroup, setInGroup] = useState(false);
+  const [result, setResult] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      setResult(await api.testRules(accountId, text, inGroup));
+      haptic.select();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  const answer = result && rules.find((r) => r.id === result.answer_rule_id);
+  const reasons = {
+    disabled: "выключено",
+    scope: "не для этого чата",
+    schedule: "сейчас нерабочее время",
+  };
+
+  return (
+    <section className="rounded-[18px] bg-surface p-4">
+      <h2 className="flex items-center gap-2 text-[15px] font-semibold">
+        <FlaskConical className="h-4 w-4 text-sky" aria-hidden /> Проверить правила
+      </h2>
+      <p className="mt-1 text-[13px] leading-snug text-muted">
+        Напишите сообщение как клиент — покажем, что ответит автопилот.
+      </p>
+      <form onSubmit={run} className="mt-3 flex gap-2">
+        <Input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Сколько стоит доставка?"
+          aria-label="Пример сообщения"
+          className="!py-2.5"
+        />
+        <Button type="submit" loading={loading} disabled={!text.trim()}>
+          Проверить
+        </Button>
+      </form>
+      <label className="mt-2 flex items-center gap-2 text-[13px] text-muted">
+        <input
+          type="checkbox"
+          checked={inGroup}
+          onChange={(e) => setInGroup(e.target.checked)}
+          className="h-4 w-4 accent-[rgb(var(--sky))]"
+        />
+        Как упоминание в группе
+      </label>
+      <ErrorNote>{error}</ErrorNote>
+      <AnimatePresence>
+        {result && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-3 space-y-2"
+          >
+            {answer ? (
+              <div className="rounded-tile bg-go/10 p-3">
+                <p className="text-[13px] font-semibold text-go">Автопилот ответит:</p>
+                <p className="mt-1 line-clamp-3 text-[14px] leading-snug">
+                  {answer.response_text.replace(/<[^>]+>/g, "")}
+                </p>
+              </div>
+            ) : (
+              <div className="rounded-tile bg-warn/10 p-3 text-[13px] font-semibold text-warn">
+                Ни одно правило не ответит на это сообщение.
+              </div>
+            )}
+            {result.verdicts
+              .filter((v) => v.matched && v.blocked_by)
+              .map((v) => {
+                const rule = rules.find((r) => r.id === v.rule_id);
+                return (
+                  <p key={v.rule_id} className="text-xs text-faint">
+                    Подошло, но промолчит: «
+                    {rule?.response_text.replace(/<[^>]+>/g, "").slice(0, 40)}
+                    …» — {reasons[v.blocked_by] || v.blocked_by}
+                  </p>
+                );
+              })}
+            <p className="text-xs leading-snug text-faint">{result.note}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </section>
+  );
+}
+
 function RuleRow({ rule, onOpen, onToggle }) {
   const preview = rule.response_text.replace(/<[^>]+>/g, "");
   const smart = [
     rule.schedule_enabled && {
       icon: Clock,
       label: `${rule.schedule_start}–${rule.schedule_end}`,
+    },
+    rule.scope !== "private" && {
+      icon: UsersRound,
+      label: rule.scope === "groups" ? "группы" : "везде",
     },
     rule.new_contacts_only && { icon: UserPlus, label: "новым" },
     rule.skip_if_owner_active_minutes > 0 && { icon: Hand, label: "не мешать" },
@@ -532,6 +685,7 @@ export default function AutoresponderPage() {
         />
       ) : (
         <div className="space-y-2.5">
+          <RuleTester accountId={accountId} rules={rules} />
           <AnimatePresence initial={false}>
             {rules.map((rule) => (
               <RuleRow

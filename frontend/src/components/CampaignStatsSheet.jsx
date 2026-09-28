@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, CircleSlash, RotateCcw } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleSlash, Download, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import { haptic } from "../lib/telegram.js";
@@ -24,6 +24,20 @@ export default function CampaignStatsSheet({ open, onClose, accountId, campaign,
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
   const [restoring, setRestoring] = useState("");
+  const [exporting, setExporting] = useState(false);
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const { rows } = await api.exportCampaign(accountId, campaign.id);
+      haptic.success();
+      toast(`Файл (${rows} строк) отправлен в чат с ботом`);
+    } catch (err) {
+      toast(err.message, "danger");
+    } finally {
+      setExporting(false);
+    }
+  }
 
   useEffect(() => {
     if (!open || !campaign) return;
@@ -91,6 +105,16 @@ export default function CampaignStatsSheet({ open, onClose, accountId, campaign,
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-danger/25">
               <div className="h-full rounded-full bg-go" style={{ width: `${rate}%` }} />
             </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              icon={Download}
+              className="mt-3 w-full"
+              loading={exporting}
+              onClick={exportCsv}
+            >
+              Выгрузить журнал в CSV
+            </Button>
           </div>
         )}
         {stats && (

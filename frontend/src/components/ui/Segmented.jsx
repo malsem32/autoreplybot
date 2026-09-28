@@ -4,6 +4,7 @@ import { haptic } from "../../lib/telegram.js";
 
 export default function Segmented({ value, onChange, options }) {
   const id = useId();
+  const compact = options.length > 3;
   return (
     <div className="flex rounded-tile bg-raised/70 p-1" role="tablist">
       {options.map((opt) => {
@@ -18,7 +19,7 @@ export default function Segmented({ value, onChange, options }) {
               if (!active) haptic.select();
               onChange(opt.value);
             }}
-            className={`relative flex-1 rounded-[10px] px-3 py-2 text-sm font-semibold transition-colors ${active ? "text-ink" : "text-muted"}`}
+            className={`relative flex-1 whitespace-nowrap rounded-[10px] py-2 font-semibold transition-colors ${compact ? "px-1 text-[13px]" : "px-3 text-sm"} ${active ? "text-ink" : "text-muted"}`}
           >
             {active && (
               <motion.span

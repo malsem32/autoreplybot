@@ -23,6 +23,14 @@ router = Router(name="payments")
 PLAN_CALLBACK = "pro_plan:"
 
 
+@router.callback_query(F.data == "pro_menu")
+async def pro_menu_button(query: CallbackQuery) -> None:
+    """ "Продлить" button under the Pro expiry reminder (workers/digests.py)."""
+    if isinstance(query.message, Message):
+        await buy_pro(query.message)
+    await query.answer()
+
+
 @router.message(Command("pro"))
 async def buy_pro(message: Message) -> None:
     """Sells Pro right in the bot chat: pick a plan, get the same invoice the

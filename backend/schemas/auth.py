@@ -48,6 +48,7 @@ class TelegramAccountOut(BaseModel):
     is_active: bool
     first_name: str | None
     username: str | None
+    role: str = "owner"  # owner | member (shared via team access)
 
     class Config:
         from_attributes = True

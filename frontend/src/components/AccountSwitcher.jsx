@@ -32,15 +32,19 @@ export default function AccountSwitcher() {
   const [adding, setAdding] = useState(false);
 
   async function handleDelete(account) {
+    const member = account.role === "member";
     const ok = await confirmDialog(
-      `Отключить ${accountName(account)}? Правила автоответа и рассылки этого аккаунта будут удалены.`,
+      member
+        ? `Выйти из команды аккаунта ${accountName(account)}?`
+        : `Отключить ${accountName(account)}? Правила автоответа и рассылки этого аккаунта будут удалены.`,
     );
     if (!ok) return;
     try {
-      await api.deleteAccount(account.id);
+      if (member) await api.leaveTeam(account.id);
+      else await api.deleteAccount(account.id);
       removeAccount(account.id);
       haptic.success();
-      toast("Аккаунт отключён");
+      toast(member ? "Вы вышли из команды" : "Аккаунт отключён");
     } catch (err) {
       toast(err.message, "danger");
     }
@@ -89,12 +93,14 @@ export default function AccountSwitcher() {
                     </span>
                   </span>
                 </button>
+                {account.role === "member" && <Pill tone="sky">команда</Pill>}
                 <Pill tone={account.is_active ? "go" : "warn"} dot>
                   {account.is_active ? "Вкл" : "Пауза"}
                 </Pill>
                 <button
                   type="button"
                   onClick={() => handleDelete(account)}
+                  title={account.role === "member" ? "Выйти из команды" : "Отключить аккаунт"}
                   className="grid h-9 w-9 place-items-center rounded-lg text-faint hover:text-danger"
                   aria-label={`Отключить ${accountName(account)}`}
                 >

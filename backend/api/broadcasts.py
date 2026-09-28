@@ -18,7 +18,7 @@ from backend.schemas.broadcast import (
     CampaignStatsOut,
     TargetStatsOut,
 )
-from backend.services import pro
+from backend.services import access, pro
 from backend.services.media import resolve_photos
 
 router = APIRouter(prefix="/api/broadcasts", tags=["broadcasts"])
@@ -35,32 +35,27 @@ _PRO_OPTION_MESSAGES = {
 }
 
 
-def _require_pro_for_options(user: User, data: dict) -> None:
+def _require_pro_for_options(owner: User, data: dict) -> None:
     """Tags, forward protection, auto-disabling and reports are Pro
-    (AGENTS.md 4.13); switching them *off* is always allowed."""
-    if pro.has_access(user):
+    (AGENTS.md 4.13) — of the account *owner*; switching them off is always
+    allowed."""
+    if pro.has_access(owner):
         return
     for field in PRO_CAMPAIGN_FIELDS:
         if data.get(field):
             raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _PRO_OPTION_MESSAGES[field])
 
 
-async def _get_owned_account(db: AsyncSession, user: User, account_id: int) -> TelegramAccount:
-    result = await db.execute(
-        select(TelegramAccount).where(
-            TelegramAccount.id == account_id, TelegramAccount.user_id == user.id
-        )
-    )
-    account = result.scalar_one_or_none()
-    if account is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Аккаунт не найден")
-    return account
+async def _campaign_owner(db: AsyncSession, campaign: BroadcastCampaign) -> User:
+    account = await db.get(TelegramAccount, campaign.account_id)
+    assert account is not None
+    return await access.account_owner(db, account)
 
 
 async def _get_owned_campaign(
     db: AsyncSession, user: User, account_id: int, campaign_id: int
 ) -> BroadcastCampaign:
-    await _get_owned_account(db, user, account_id)
+    await access.get_account(db, user, account_id)
     result = await db.execute(
         select(BroadcastCampaign).where(
             BroadcastCampaign.id == campaign_id, BroadcastCampaign.account_id == account_id
@@ -78,7 +73,7 @@ async def list_campaigns(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[BroadcastCampaign]:
-    await _get_owned_account(db, user, account_id)
+    await access.get_account(db, user, account_id)
     result = await db.execute(
         select(BroadcastCampaign)
         .where(BroadcastCampaign.account_id == account_id)
@@ -94,9 +89,10 @@ async def create_campaign(
     user: User = Depends(_broadcasts_rate_limit),
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
-    await _get_owned_account(db, user, account_id)
-    _require_pro_for_options(user, payload.model_dump())
-    if not pro.has_access(user):
+    account = await access.get_account(db, user, account_id)
+    owner = await access.account_owner(db, account)
+    _require_pro_for_options(owner, payload.model_dump())
+    if not pro.has_access(owner):
         count = await db.scalar(
             select(func.count())
             .select_from(BroadcastCampaign)
@@ -110,7 +106,7 @@ async def create_campaign(
     campaign = BroadcastCampaign(
         account_id=account_id,
         status="active",
-        photo_paths=resolve_photos(payload.photos, user),
+        photo_paths=resolve_photos(payload.photos, owner),
         **payload.model_dump(exclude={"photos"}),
     )
     db.add(campaign)
@@ -128,10 +124,11 @@ async def update_campaign(
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
     campaign = await _get_owned_campaign(db, user, account_id, campaign_id)
+    owner = await _campaign_owner(db, campaign)
     data = payload.model_dump(exclude_unset=True, exclude={"photos", "disabled_targets"})
-    _require_pro_for_options(user, data)
+    _require_pro_for_options(owner, data)
     if payload.photos is not None:
-        new_paths = resolve_photos(payload.photos, user)
+        new_paths = resolve_photos(payload.photos, owner)
         delete_uploads(campaign.photo_paths, keep=new_paths)
         campaign.photo_paths = new_paths
 
@@ -180,7 +177,7 @@ async def campaign_stats(
 ) -> CampaignStatsOut:
     """Per-chat delivery statistics (Pro), aggregated in SQL (AGENTS.md 4.6)."""
     campaign = await _get_owned_campaign(db, user, account_id, campaign_id)
-    if not pro.has_access(user):
+    if not pro.has_access(await _campaign_owner(db, campaign)):
         raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Статистика по чатам доступна в Pro")
 
     per_target = (

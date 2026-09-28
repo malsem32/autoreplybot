@@ -108,6 +108,29 @@ export const api = {
   getCampaignStats: (accountId, campaignId) =>
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/stats`),
 
+  testRules: (accountId, text, inGroup = false) =>
+    request(`/autoresponder/${accountId}/test`, {
+      method: "POST",
+      body: { text, in_group: inGroup },
+    }),
+
+  listLeads: (accountId, status) =>
+    request(`/leads/${accountId}${status ? `?status=${status}` : ""}`),
+  updateLead: (accountId, leadId, patch) =>
+    request(`/leads/${accountId}/${leadId}`, { method: "PATCH", body: patch }),
+  exportLeads: (accountId) => request(`/export/leads/${accountId}`, { method: "POST" }),
+  exportCampaign: (accountId, campaignId) =>
+    request(`/export/campaigns/${accountId}/${campaignId}`, { method: "POST" }),
+
+  getTeam: (accountId) => request(`/team/${accountId}`),
+  createTeamInvite: (accountId) => request(`/team/${accountId}/invite`, { method: "POST" }),
+  removeTeamMember: (accountId, memberId) =>
+    request(`/team/${accountId}/members/${memberId}`, { method: "DELETE" }),
+  leaveTeam: (accountId) => request(`/team/${accountId}/leave`, { method: "POST" }),
+
+  getMe: () => request("/me"),
+  updateMe: (patch) => request("/me", { method: "PATCH", body: patch }),
+
   listTemplates: () => request("/templates"),
   createTemplate: (template) => request("/templates", { method: "POST", body: template }),
   deleteTemplate: (id) => request(`/templates/${id}`, { method: "DELETE" }),

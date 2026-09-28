@@ -13,6 +13,7 @@ from backend.models.broadcast import BroadcastCampaign, BroadcastLog
 from backend.models.telegram_account import TelegramAccount
 from workers.broadcaster import run_campaign
 from workers.client_manager import client_manager
+from workers.digests import send_pro_reminders, send_weekly_digests
 from workers.responder import register_responder
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,8 @@ async def main() -> None:
     # seconds instead of waiting up to a minute for the next tick.
     scheduler.add_job(dispatch_due_campaigns, "interval", seconds=15, max_instances=1)
     scheduler.add_job(ensure_responders_running, "interval", minutes=1, max_instances=1)
+    scheduler.add_job(send_pro_reminders, "interval", hours=1, max_instances=1)
+    scheduler.add_job(send_weekly_digests, "interval", hours=1, max_instances=1)
     scheduler.start()
 
     await ensure_responders_running()

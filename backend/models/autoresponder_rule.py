@@ -15,6 +15,11 @@ class AutoresponderRule(TimestampMixin, Base):
     is_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     trigger_type: Mapped[str] = mapped_column(String(16), default="all")  # "all" | "keywords"
     keywords: Mapped[list[str]] = mapped_column(JSON, default=list)
+    # How keywords match (backend/services/rule_match.py): contains | word | exact.
+    match_mode: Mapped[str] = mapped_column(String(16), default="contains")
+    # Where the rule answers: private | groups (Pro: mentions/replies to the
+    # owner in groups) | all.
+    scope: Mapped[str] = mapped_column(String(16), default="private")
     response_text: Mapped[str] = mapped_column(String)
     # Up to 10 photos under backend/core/uploads.UPLOAD_DIR; 2+ go out as an album.
     photo_paths: Mapped[list[str]] = mapped_column(JSON, default=list)

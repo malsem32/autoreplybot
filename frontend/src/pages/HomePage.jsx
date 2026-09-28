@@ -1,5 +1,5 @@
 import { motion } from "framer-motion";
-import { Crown, Gift, MessageCircleReply, Plus, Send } from "lucide-react";
+import { Crown, Gift, Inbox, MessageCircleReply, Plus, Send } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
@@ -52,6 +52,19 @@ export default function HomePage() {
   const [adding, setAdding] = useState(false);
   const [toggling, setToggling] = useState(false);
   const [counts, setCounts] = useState(null);
+  const [newLeads, setNewLeads] = useState(null);
+
+  useEffect(() => {
+    if (!activeAccount || !pro?.has_access) return;
+    let cancelled = false;
+    api
+      .listLeads(activeAccount.id, "new")
+      .then((data) => !cancelled && setNewLeads(data.counts.new))
+      .catch(() => !cancelled && setNewLeads(0));
+    return () => {
+      cancelled = true;
+    };
+  }, [activeAccount, pro?.has_access]);
 
   useEffect(() => {
     if (!activeAccount) return;
@@ -187,6 +200,29 @@ export default function HomePage() {
           }
           chevron
           onClick={() => navigate("/broadcast")}
+        />
+        <ListRow
+          icon={Inbox}
+          iconClass="bg-warn/15 text-warn"
+          title="Обращения"
+          subtitle={
+            !pro?.has_access
+              ? "Мини-CRM всех, кто вам написал — в Pro"
+              : newLeads === null
+                ? "Загрузка…"
+                : newLeads
+                  ? `${newLeads} ${plural(newLeads, "новое ждёт ответа", "новых ждут ответа", "новых ждут ответа")}`
+                  : "Новых нет — всё разобрано"
+          }
+          right={
+            newLeads > 0 ? (
+              <span className="grid h-6 min-w-6 place-items-center rounded-full bg-sky px-1.5 text-xs font-bold text-onsky">
+                {newLeads}
+              </span>
+            ) : null
+          }
+          chevron
+          onClick={() => navigate("/leads")}
         />
         <ListRow
           icon={Gift}

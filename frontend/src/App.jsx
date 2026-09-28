@@ -8,6 +8,7 @@ import { Skeleton } from "./components/ui/Feedback.jsx";
 import AutoresponderPage from "./pages/AutoresponderPage.jsx";
 import BroadcastPage from "./pages/BroadcastPage.jsx";
 import HomePage from "./pages/HomePage.jsx";
+import LeadsPage from "./pages/LeadsPage.jsx";
 import ProfilePage from "./pages/ProfilePage.jsx";
 import ProxiesPage from "./pages/ProxiesPage.jsx";
 import StatsPage from "./pages/StatsPage.jsx";
@@ -47,6 +48,7 @@ function AnimatedRoutes() {
         <Routes location={location}>
           <Route path="/" element={<HomePage />} />
           <Route path="/autoresponder" element={<AutoresponderPage />} />
+          <Route path="/leads" element={<LeadsPage />} />
           <Route path="/broadcast" element={<BroadcastPage />} />
           <Route path="/profile" element={<ProfilePage />} />
           <Route

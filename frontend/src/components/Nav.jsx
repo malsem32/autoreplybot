@@ -1,17 +1,18 @@
 import { motion } from "framer-motion";
-import { Gauge, MessageCircleReply, Send, UserRound } from "lucide-react";
+import { Gauge, Inbox, MessageCircleReply, Send, UserRound } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
 import { haptic } from "../lib/telegram.js";
 
 export const TABS = [
   { to: "/", label: "Главная", icon: Gauge },
   { to: "/autoresponder", label: "Автоответ", icon: MessageCircleReply },
+  { to: "/leads", label: "Обращения", icon: Inbox },
   { to: "/broadcast", label: "Рассылки", icon: Send },
   { to: "/profile", label: "Профиль", icon: UserRound },
 ];
 
 export function tabIndex(pathname) {
-  if (pathname.startsWith("/admin")) return 3;
+  if (pathname.startsWith("/admin")) return TABS.length - 1;
   const i = TABS.findIndex((t) => (t.to === "/" ? pathname === "/" : pathname.startsWith(t.to)));
   return i === -1 ? 0 : i;
 }
@@ -34,14 +35,14 @@ export default function Nav() {
               to={tab.to}
               end={tab.to === "/"}
               onClick={() => !active && haptic.select()}
-              className={`relative flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] font-semibold transition-colors ${
+              className={`relative flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] font-semibold transition-colors ${
                 active ? "text-sky" : "text-faint"
               }`}
             >
               {active && (
                 <motion.span
                   layoutId="nav-pill"
-                  className="absolute top-1.5 h-8 w-14 rounded-full bg-sky/12"
+                  className="absolute top-1.5 h-8 w-12 rounded-full bg-sky/12"
                   transition={{ type: "spring", stiffness: 500, damping: 38 }}
                 />
               )}

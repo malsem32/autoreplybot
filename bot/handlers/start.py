@@ -1,11 +1,12 @@
 from aiogram import Router
+from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import Message
 from sqlalchemy import select
 
 from backend.db.session import SessionLocal
 from backend.models.user import User
-from backend.services import referrals
+from backend.services import referrals, team
 from bot.keyboards.webapp import open_app_keyboard
 
 router = Router(name="start")
@@ -28,8 +29,40 @@ async def _register_referral(telegram_id: int, start_arg: str | None) -> None:
         await db.commit()
 
 
+async def _join_team(message: Message, token: str) -> None:
+    sender = message.from_user
+    assert sender is not None
+    name = " ".join(p for p in (sender.first_name, sender.last_name) if p) or (
+        f"@{sender.username}" if sender.username else "Без имени"
+    )
+    async with SessionLocal() as db:
+        outcome, account = await team.accept_invite(db, token, sender.id, name)
+        owner = await db.get(User, account.user_id) if account else None
+    title = (account.first_name or account.username or "аккаунту") if account else ""
+    texts = {
+        "joined": f"🤝 Вы в команде! Теперь вы можете управлять аккаунтом «{title}» "
+        "в приложении Автопилот: автоответы, рассылки и обращения.",
+        "already": f"Вы уже в команде аккаунта «{title}».",
+        "own": "Это ваш собственный аккаунт — приглашение не нужно.",
+        "full": "В команде этого аккаунта уже максимум участников.",
+        "invalid": "Ссылка-приглашение устарела или уже использована. Попросите новую.",
+    }
+    await message.answer(texts[outcome], reply_markup=open_app_keyboard())
+    if outcome == "joined" and owner is not None and message.bot is not None:
+        try:
+            await message.bot.send_message(
+                owner.telegram_id, f"🤝 {name} присоединился к команде аккаунта «{title}»."
+            )
+        except TelegramAPIError:
+            pass
+
+
 @router.message(CommandStart())
 async def start(message: Message, command: CommandObject) -> None:
+    token = team.parse_team_code(command.args)
+    if token and message.from_user is not None:
+        await _join_team(message, token)
+        return
     if message.from_user is not None:
         await _register_referral(message.from_user.id, command.args)
 

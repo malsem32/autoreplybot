@@ -33,4 +33,12 @@ class User(TimestampMixin, Base):
     # One free Pro trial per user (backend/services/pro.py:start_trial).
     trial_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # Bot notifications (workers/digests.py): weekly Pro digest opt-out, and
+    # which Pro expiry date the "expires in 3 days" reminder was sent for.
+    weekly_digest: Mapped[bool] = mapped_column(Boolean, default=True)
+    digest_sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    pro_reminder_for: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
     accounts: Mapped[list["TelegramAccount"]] = relationship(back_populates="user")

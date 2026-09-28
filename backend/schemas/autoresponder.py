@@ -46,6 +46,8 @@ class AutoresponderRuleIn(_RuleOptionsValidators):
     is_enabled: bool = True
     trigger_type: str = Field(pattern="^(all|keywords)$", default="all")
     keywords: list[str] = Field(default_factory=list)
+    match_mode: str = Field(pattern="^(contains|word|exact)$", default="contains")
+    scope: str = Field(pattern="^(private|groups|all)$", default="private")
     response_text: str = Field(min_length=1, max_length=MAX_TEXT_LENGTH)
     # Upload refs (path / URL / filename from POST /api/uploads/photo).
     photos: list[str] = Field(default_factory=list, max_length=MAX_PHOTOS)
@@ -66,6 +68,8 @@ class AutoresponderRuleUpdate(_RuleOptionsValidators):
     is_enabled: bool | None = None
     trigger_type: str | None = Field(pattern="^(all|keywords)$", default=None)
     keywords: list[str] | None = None
+    match_mode: str | None = Field(pattern="^(contains|word|exact)$", default=None)
+    scope: str | None = Field(pattern="^(private|groups|all)$", default=None)
     response_text: str | None = Field(min_length=1, max_length=MAX_TEXT_LENGTH, default=None)
     # Replaces the whole photo list when given; [] removes all photos.
     photos: list[str] | None = Field(max_length=MAX_PHOTOS, default=None)
@@ -88,6 +92,8 @@ class AutoresponderRuleOut(BaseModel):
     is_enabled: bool
     trigger_type: str
     keywords: list[str]
+    match_mode: str
+    scope: str
     response_text: str
     cooldown_seconds: int
     photo_paths: list[str] = Field(exclude=True, default_factory=list)
@@ -111,3 +117,21 @@ class AutoresponderRuleOut(BaseModel):
     @property
     def photo_urls(self) -> list[str]:
         return [photo_url(p) for p in self.photo_paths or []]
+
+
+class RuleTestIn(BaseModel):
+    text: str = Field(max_length=MAX_TEXT_LENGTH)
+    in_group: bool = False  # simulate a mention in a group instead of a private message
+
+
+class RuleTestVerdict(BaseModel):
+    rule_id: int
+    matched: bool
+    keyword: str | None  # the keyword that fired ("" = "any message")
+    blocked_by: str | None  # why a matching rule would stay silent right now
+
+
+class RuleTestOut(BaseModel):
+    answer_rule_id: int | None
+    note: str
+    verdicts: list[RuleTestVerdict]

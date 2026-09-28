@@ -25,7 +25,9 @@ from backend.core.uploads import delete_uploads
 from backend.db.session import get_db
 from backend.models.autoresponder_rule import AutoresponderEvent, AutoresponderRule
 from backend.models.broadcast import BroadcastCampaign, BroadcastLog, FloodWaitEvent
+from backend.models.lead import Lead
 from backend.models.proxy import Proxy
+from backend.models.team import AccountMember, TeamInvite
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
 from backend.schemas.auth import (
@@ -42,6 +44,7 @@ from backend.schemas.auth import (
     TelegramAccountOut,
     TelegramAccountUpdate,
 )
+from backend.services import access
 
 logger = logging.getLogger(__name__)
 
@@ -238,28 +241,27 @@ async def _password_hint(client: Client) -> str | None:
         return None
 
 
+def _account_out(account: TelegramAccount, role: str) -> TelegramAccountOut:
+    out = TelegramAccountOut.model_validate(account)
+    out.role = role
+    return out
+
+
 @router.get("/accounts", response_model=list[TelegramAccountOut])
 async def list_accounts(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> list[TelegramAccount]:
+) -> list[TelegramAccountOut]:
+    """Own accounts first, then accounts shared with the user by a team
+    owner (AGENTS.md 4.16)."""
     result = await db.execute(
         select(TelegramAccount)
         .where(TelegramAccount.user_id == user.id)
         .order_by(TelegramAccount.id)
     )
-    return list(result.scalars().all())
-
-
-async def _get_owned_account(db: AsyncSession, user: User, account_id: int) -> TelegramAccount:
-    account = await db.scalar(
-        select(TelegramAccount).where(
-            TelegramAccount.id == account_id, TelegramAccount.user_id == user.id
-        )
-    )
-    if account is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "Аккаунт не найден")
-    return account
+    own = [_account_out(a, "owner") for a in result.scalars().all()]
+    shared = [_account_out(a, "member") for a in await access.shared_accounts(db, user)]
+    return own + shared
 
 
 @router.patch("/accounts/{account_id}", response_model=TelegramAccountOut)
@@ -268,10 +270,11 @@ async def update_account(
     payload: TelegramAccountUpdate,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> TelegramAccount:
+) -> TelegramAccountOut:
     """Pauses/resumes an account. The worker picks the change up on its next
-    tick and stops (or starts) the account's client (AGENTS.md 4.5)."""
-    account = await _get_owned_account(db, user, account_id)
+    tick and stops (or starts) the account's client (AGENTS.md 4.5). Team
+    members may pause/resume too."""
+    account = await access.get_account(db, user, account_id)
     if payload.is_active and not account.encrypted_session:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "Сессия аккаунта утеряна — подключите его заново"
@@ -279,7 +282,7 @@ async def update_account(
     account.is_active = payload.is_active
     await db.commit()
     await db.refresh(account)
-    return account
+    return _account_out(account, "owner" if account.user_id == user.id else "member")
 
 
 @router.delete("/accounts/{account_id}", status_code=204)
@@ -289,8 +292,9 @@ async def delete_account(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     """Removes an account with its rules, campaigns and logs. The worker
-    disconnects the account's client on its next tick (AGENTS.md 4.5)."""
-    account = await _get_owned_account(db, user, account_id)
+    disconnects the account's client on its next tick (AGENTS.md 4.5).
+    Owner only."""
+    account = await access.get_account(db, user, account_id, owner_only=True)
 
     campaigns = list(
         (
@@ -311,6 +315,9 @@ async def delete_account(
         await db.execute(delete(BroadcastLog).where(BroadcastLog.campaign_id.in_(campaign_ids)))
     await db.execute(delete(AutoresponderEvent).where(AutoresponderEvent.account_id == account.id))
     await db.execute(delete(FloodWaitEvent).where(FloodWaitEvent.account_id == account.id))
+    await db.execute(delete(Lead).where(Lead.account_id == account.id))
+    await db.execute(delete(AccountMember).where(AccountMember.account_id == account.id))
+    await db.execute(delete(TeamInvite).where(TeamInvite.account_id == account.id))
     for campaign in campaigns:
         delete_uploads(campaign.photo_paths)
         await db.delete(campaign)

@@ -13,9 +13,11 @@ from backend.core.telegram_errors import flood_wait_seconds
 from backend.db.session import SessionLocal
 from backend.models.autoresponder_rule import AutoresponderEvent, AutoresponderRule
 from backend.models.broadcast import FloodWaitEvent
+from backend.models.lead import Lead
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
 from backend.services import pro
+from backend.services.rule_match import matches
 from backend.services.schedule import is_within_schedule
 from workers.notify import esc, notify_user
 from workers.sending import SendOptions, send_content
@@ -43,10 +45,15 @@ async def _set_cooldown(account_id: int, peer_id: int, seconds: int) -> None:
 
 
 def _matches(rule: AutoresponderRule, text: str) -> bool:
-    if rule.trigger_type == "all":
-        return True
-    lowered = text.lower()
-    return any(keyword.lower() in lowered for keyword in rule.keywords)
+    return matches(rule.trigger_type, rule.keywords, rule.match_mode, text)
+
+
+def scope_allows(rule: AutoresponderRule, in_group: bool, has_pro: bool) -> bool:
+    """Private rules answer in private chats; group replies (to mentions of
+    the owner or replies to their messages) are Pro."""
+    if in_group:
+        return has_pro and rule.scope in ("groups", "all")
+    return rule.scope in ("private", "all")
 
 
 def _naive_local(value: datetime) -> datetime:
@@ -95,7 +102,12 @@ async def _rule_applies(
         rule.schedule_days, rule.schedule_start, rule.schedule_end, rule.timezone
     ):
         return False
-    if rule.new_contacts_only and not is_new_contact(await ctx.history(), message.id):
+    in_group = message.chat is not None and message.chat.type != enums.ChatType.PRIVATE
+    if (
+        rule.new_contacts_only
+        and not in_group
+        and not is_new_contact(await ctx.history(), message.id)
+    ):
         return False
     if rule.skip_if_owner_active_minutes and owner_recently_active(
         await ctx.history(), rule.skip_if_owner_active_minutes, datetime.now(UTC)
@@ -145,7 +157,7 @@ async def _type_for(client: Client, chat_id: int, seconds: int) -> None:
         remaining -= step
 
 
-def _notification_text(message: Message, rule: AutoresponderRule) -> str:
+def _notification_text(message: Message, rule: AutoresponderRule, in_group: bool = False) -> str:
     sender = message.from_user
     assert sender is not None  # bots and anonymous senders are filtered out earlier
     name = esc(" ".join(p for p in (sender.first_name, sender.last_name) if p) or "Без имени")
@@ -154,11 +166,67 @@ def _notification_text(message: Message, rule: AutoresponderRule) -> str:
     if len(incoming) > NOTIFY_PREVIEW_CHARS:
         incoming = incoming[:NOTIFY_PREVIEW_CHARS] + "…"
     trigger = "любое сообщение" if rule.trigger_type == "all" else ", ".join(rule.keywords[:5])
+    where = (
+        f" в группе «{esc(message.chat.title)}»" if in_group and message.chat is not None else ""
+    )
     return (
-        f"💬 <b>Новое обращение</b> от {name}{handle}\n\n"
+        f"💬 <b>Новое обращение</b> от {name}{handle}{where}\n\n"
         f"<blockquote>{esc(incoming)}</blockquote>\n"
         f"Автопилот ответил по правилу «{esc(trigger)}»."
     )
+
+
+def _display_name(message: Message) -> str:
+    sender = message.from_user
+    if sender is None:
+        return ""
+    return " ".join(p for p in (sender.first_name, sender.last_name) if p) or "Без имени"
+
+
+async def upsert_lead(account_id: int, message: Message) -> Lead | None:
+    """Pro "Обращения": records who wrote in private messages. A finished
+    lead writing again is reopened as new."""
+    sender = message.from_user
+    if sender is None:
+        return None
+    text = (message.text or message.caption or "[медиа]")[:500]
+    try:
+        async with SessionLocal() as db:
+            lead = await db.scalar(
+                select(Lead).where(Lead.account_id == account_id, Lead.peer_id == sender.id)
+            )
+            if lead is None:
+                lead = Lead(account_id=account_id, peer_id=sender.id, messages_count=0)
+                db.add(lead)
+            elif lead.status == "done":
+                lead.status = "new"
+            lead.name = _display_name(message)[:256]
+            lead.username = sender.username
+            lead.last_text = text
+            lead.messages_count = (lead.messages_count or 0) + 1
+            lead.last_message_at = datetime.now(UTC)
+            await db.commit()
+            await db.refresh(lead)
+            return lead
+    except Exception:  # noqa: BLE001 - the CRM must never break replying
+        logger.warning("failed to record lead for account %s", account_id)
+        return None
+
+
+def lead_keyboard(lead: Lead | None, username: str | None) -> dict | None:
+    """Inline buttons under an owner notification: change the lead status
+    right from the bot chat (bot/handlers/leads.py) and open the dialog."""
+    rows: list[list[dict]] = []
+    if lead is not None:
+        rows.append(
+            [
+                {"text": "🛠 В работу", "callback_data": f"lead:{lead.id}:in_work"},
+                {"text": "✅ Готово", "callback_data": f"lead:{lead.id}:done"},
+            ]
+        )
+    if username:
+        rows.append([{"text": "💬 Открыть диалог", "url": f"https://t.me/{username}"}])
+    return {"inline_keyboard": rows} if rows else None
 
 
 def register_responder(client: Client, account_id: int) -> None:
@@ -172,24 +240,33 @@ def register_responder(client: Client, account_id: int) -> None:
     passes its Pro filters answers.
     """
 
-    @client.on_message(filters.private & filters.incoming)  # type: ignore[misc]
+    @client.on_message(filters.incoming & (filters.private | filters.group))  # type: ignore[misc]
     async def _handle(_: Client, message: Message) -> None:
         if message.from_user is None or message.from_user.is_bot:
             return
+        in_group = message.chat is not None and message.chat.type != enums.ChatType.PRIVATE
+        # In groups only mentions of the owner / replies to their messages count.
+        if in_group and not message.mentioned:
+            return
 
         peer_id = message.from_user.id
+        rules, owner = await _load(account_id)
+        has_pro = owner is not None and pro.has_access(owner)
+
+        lead = None
+        if has_pro and not in_group:
+            lead = await upsert_lead(account_id, message)
+
         if await _on_cooldown(account_id, peer_id):
             return
 
         chat_id = (message.chat.id if message.chat else None) or peer_id
         incoming = message.text or message.caption or ""
-        rules, owner = await _load(account_id)
-        has_pro = owner is not None and pro.has_access(owner)
         ctx = _ChatContext(client, chat_id)
 
         rule = None
         for candidate in rules:
-            if not _matches(candidate, incoming):
+            if not scope_allows(candidate, in_group, has_pro) or not _matches(candidate, incoming):
                 continue
             try:
                 if await _rule_applies(candidate, has_pro, message, ctx):
@@ -234,4 +311,8 @@ def register_responder(client: Client, account_id: int) -> None:
 
         await _record(AutoresponderEvent(rule_id=rule.id, account_id=account_id))
         if has_pro and rule.notify_owner and owner is not None:
-            await notify_user(owner.telegram_id, _notification_text(message, rule))
+            await notify_user(
+                owner.telegram_id,
+                _notification_text(message, rule, in_group),
+                lead_keyboard(lead, message.from_user.username),
+            )
