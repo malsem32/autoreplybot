@@ -3,7 +3,14 @@ import logging
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
-from aiogram.types import LabeledPrice, Message, PreCheckoutQuery
+from aiogram.types import (
+    CallbackQuery,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    LabeledPrice,
+    Message,
+    PreCheckoutQuery,
+)
 
 from backend.db.session import SessionLocal
 from backend.services import pro, referrals
@@ -13,33 +20,63 @@ logger = logging.getLogger(__name__)
 router = Router(name="payments")
 
 
+PLAN_CALLBACK = "pro_plan:"
+
+
 @router.message(Command("pro"))
 async def buy_pro(message: Message) -> None:
-    """Sells Pro right in the bot chat — the same invoice the Mini App opens."""
-    if message.from_user is None:
-        return
+    """Sells Pro right in the bot chat: pick a plan, get the same invoice the
+    Mini App opens."""
     async with SessionLocal() as db:
         row = await pro.get_settings(db)
-    params = pro.invoice_params(
-        row.stars_price,
-        row.duration_days,
-        pro.invoice_payload(message.from_user.id, row.duration_days),
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text=f"{plan.title} — {plan.stars} ⭐️", callback_data=f"{PLAN_CALLBACK}{plan.id}"
+            )
+        ]
+        for plan in pro.plans(row)
+    ]
+    features = "\n".join(f"• {item}" for item in pro.PRO_FEATURES)
+    await message.answer(
+        f"⭐️ <b>Автопилот Pro</b>\n\n{features}\n\nВыберите срок:",
+        parse_mode="HTML",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons),
     )
-    await message.answer_invoice(
+
+
+@router.callback_query(F.data.startswith(PLAN_CALLBACK))
+async def send_plan_invoice(query: CallbackQuery) -> None:
+    async with SessionLocal() as db:
+        row = await pro.get_settings(db)
+    plan = pro.find_plan(row, (query.data or "").removeprefix(PLAN_CALLBACK))
+    if plan is None or not isinstance(query.message, Message):
+        await query.answer("Тариф недоступен, отправьте /pro ещё раз", show_alert=True)
+        return
+    params = pro.invoice_params(
+        plan.stars, plan.days, pro.invoice_payload(query.from_user.id, plan.days)
+    )
+    await query.message.answer_invoice(
         title=params["title"],
         description=params["description"],
         payload=params["payload"],
         currency=params["currency"],
         prices=[LabeledPrice(**price) for price in params["prices"]],
     )
+    await query.answer()
 
 
 @router.pre_checkout_query()
 async def pre_checkout(query: PreCheckoutQuery) -> None:
-    if pro.parse_invoice_payload(query.invoice_payload) is None:
-        await query.answer(ok=False, error_message="Счёт устарел — запросите новый через /pro")
-        return
-    await query.answer(ok=True)
+    parsed = pro.parse_invoice_payload(query.invoice_payload)
+    if parsed is not None:
+        async with SessionLocal() as db:
+            row = await pro.get_settings(db)
+        # The price may have changed since the invoice was issued.
+        if pro.price_matches(row, parsed[1], query.total_amount):
+            await query.answer(ok=True)
+            return
+    await query.answer(ok=False, error_message="Счёт устарел — запросите новый через /pro")
 
 
 @router.message(F.successful_payment)

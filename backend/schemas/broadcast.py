@@ -5,6 +5,14 @@ from pydantic import BaseModel, Field, computed_field, model_validator
 from backend.core.uploads import photo_url
 from backend.schemas.autoresponder import MAX_PHOTOS, MAX_TEXT_LENGTH
 
+# Pro options; the API rejects enabling them without Pro (backend/api/broadcasts.py).
+PRO_CAMPAIGN_FIELDS = (
+    "tag_random_users",
+    "protect_content",
+    "auto_disable_failing",
+    "notify_report",
+)
+
 
 class BroadcastCampaignIn(BaseModel):
     title: str = Field(min_length=1, max_length=255)
@@ -15,6 +23,8 @@ class BroadcastCampaignIn(BaseModel):
     disable_notification: bool = False
     protect_content: bool = False
     disable_link_preview: bool = False
+    auto_disable_failing: bool = False
+    notify_report: bool = False
     schedule_type: str = Field(pattern="^(recurring|once)$", default="recurring")
     interval_minutes: int = Field(ge=1, default=60)
     scheduled_at: datetime | None = None
@@ -36,6 +46,10 @@ class BroadcastCampaignUpdate(BaseModel):
     disable_notification: bool | None = None
     protect_content: bool | None = None
     disable_link_preview: bool | None = None
+    auto_disable_failing: bool | None = None
+    notify_report: bool | None = None
+    # Lets the owner bring auto-disabled chats back (only shrinking is allowed).
+    disabled_targets: list[str] | None = None
     schedule_type: str | None = Field(pattern="^(recurring|once)$", default=None)
     interval_minutes: int | None = Field(ge=1, default=None)
     scheduled_at: datetime | None = None
@@ -52,6 +66,9 @@ class BroadcastCampaignOut(BaseModel):
     disable_notification: bool
     protect_content: bool
     disable_link_preview: bool
+    auto_disable_failing: bool
+    notify_report: bool
+    disabled_targets: list[str]
     schedule_type: str
     interval_minutes: int
     scheduled_at: datetime | None
@@ -68,6 +85,7 @@ class BroadcastCampaignOut(BaseModel):
 
 class BroadcastLogOut(BaseModel):
     id: int
+    target: str | None = None
     chat_id: int
     sent_at: datetime
     status: str
@@ -75,3 +93,21 @@ class BroadcastLogOut(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class TargetStatsOut(BaseModel):
+    """Per-chat delivery statistics of a campaign (Pro)."""
+
+    target: str
+    sent: int
+    failed: int
+    last_status: str | None
+    last_error: str | None
+    last_sent_at: datetime | None
+    disabled: bool
+
+
+class CampaignStatsOut(BaseModel):
+    sent: int
+    failed: int
+    targets: list[TargetStatsOut]

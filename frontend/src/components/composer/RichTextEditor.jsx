@@ -5,6 +5,7 @@ import {
   Code,
   EyeOff,
   Italic,
+  LayoutTemplate,
   Link2,
   Quote,
   Shuffle,
@@ -16,6 +17,7 @@ import { useRef, useState } from "react";
 import { haptic } from "../../lib/telegram.js";
 import { visibleLength } from "../../lib/telegramHtml.js";
 import { Input } from "../ui/Input.jsx";
+import TemplatesSheet from "./TemplatesSheet.jsx";
 
 const TOOLS = [
   { id: "b", icon: Bold, label: "Жирный", open: "<b>", close: "</b>" },
@@ -32,6 +34,7 @@ const TOOLS = [
  * exactly what the user sees in the field, with no hidden markup drift. */
 export default function RichTextEditor({ value, onChange, limit, placeholder, id }) {
   const ref = useRef(null);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [linkOpen, setLinkOpen] = useState(false);
   const [url, setUrl] = useState("https://");
   const [savedRange, setSavedRange] = useState([0, 0]);
@@ -73,6 +76,16 @@ export default function RichTextEditor({ value, onChange, limit, placeholder, id
   return (
     <div className="overflow-hidden rounded-tile border border-line bg-raised/40 focus-within:border-sky">
       <div className="flex items-center gap-0.5 overflow-x-auto border-b border-line/70 px-1.5 py-1.5 [scrollbar-width:none]">
+        <button
+          type="button"
+          title="Шаблоны сообщений"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setTemplatesOpen(true)}
+          className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg bg-sky/10 px-2.5 text-[13px] font-semibold text-sky hover:bg-sky/15"
+        >
+          <LayoutTemplate className="h-4 w-4" /> Шаблоны
+        </button>
+        <span className="mx-1 h-5 w-px shrink-0 bg-line" />
         {TOOLS.map((tool) => (
           <button
             key={tool.id}
@@ -161,6 +174,12 @@ export default function RichTextEditor({ value, onChange, limit, placeholder, id
           </span>
         </div>
       )}
+      <TemplatesSheet
+        open={templatesOpen}
+        onClose={() => setTemplatesOpen(false)}
+        currentText={value}
+        onPick={onChange}
+      />
     </div>
   );
 }

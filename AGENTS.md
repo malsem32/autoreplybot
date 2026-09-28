@@ -158,10 +158,13 @@
 
 ### 4.13. Подписка «Автопилот Pro» (Telegram Stars)
 
-- Pro — платный доступ на срок, оплачивается Telegram Stars (валюта `XTR`). Открывает: альбомы до 10 фото (без Pro — 1), теги случайных участников (`BroadcastCampaign.tag_random_users`, см. явное исключение в 4.8), защиту от пересылки (`protect_content`), безлимит правил и рассылок (без Pro — по 3 на аккаунт). Список и лимиты — в `backend/services/pro.py`.
-- Цена (`stars_price`), срок (`duration_days`) и бонус рефералки (`referral_bonus_days`) — в единственной строке `ProSetting` (`backend/models/feature_settings.py`), редактируются админом через `GET/PATCH /api/admin/pro` (защищено `ADMIN_TELEGRAM_IDS`, см. 4.6).
-- Покупка: из Mini App — `POST /api/features/pro/invoice` (`createInvoiceLink`) → `Telegram.WebApp.openInvoice`; или прямо в чате с ботом командой `/pro` (`sendInvoice`). Оба пути используют `pro.invoice_params`. Gatekeeper Bot (`bot/handlers/payments.py`) принимает `pre_checkout_query` и по `successful_payment` продлевает `User.pro_expires_at` (новые покупки суммируются к ещё не истёкшему сроку). Payload `pro:<telegram_id>:<days>`; старый `tag_broadcast:` тоже принимается. Проверка подписки на каналы (`SubscriptionMiddleware`) никогда не блокирует `successful_payment`.
-- Доступ проверяется через `backend.services.pro.has_access` — на создание/обновление (`402` без доступа, Mini App по `402` открывает пейволл) и повторно в воркере перед каждой отправкой (`workers/broadcaster.py`, `workers/responder.py`): после истечения срока теги и защита выключаются, альбом урезается до 1 фото.
+- Pro — платный доступ на срок, оплачивается Telegram Stars (валюта `XTR`). Полный список функций и бесплатные лимиты — `backend/services/pro.py` (`PRO_FEATURE_GROUPS`, `FREE_*`), он же отдаётся в Mini App и в `/pro`. Сейчас это:
+  - автоответчик (см. 4.15): расписание, «только новым», «не мешать живому диалогу», эффект печати, уведомления в бот;
+  - рассылки: статистика по чатам (`GET …/campaigns/{id}/stats`), автоотключение недоступных чатов, отчёт в бот, теги случайных участников (см. явное исключение в 4.8), защита от пересылки (`protect_content`);
+  - без ограничений: альбомы до 10 фото (без Pro — 1), свои шаблоны сообщений (библиотека готовых — бесплатно), безлимит правил и рассылок (без Pro — по 3 на аккаунт).
+- Тарифы — в единственной строке `ProSetting` (`backend/models/feature_settings.py`): базовый (`stars_price`/`duration_days`), «3 месяца» (`quarter_stars_price`) и «Год» (`year_stars_price`; цена 0 скрывает тариф), пробный период (`trial_days`, один раз на пользователя — `User.trial_used_at`, `POST /api/features/pro/trial`) и бонус рефералки. Редактируются админом через `GET/PATCH /api/admin/pro` (защищено `ADMIN_TELEGRAM_IDS`, см. 4.6).
+- Покупка: из Mini App — `POST /api/features/pro/invoice` с `plan` (`createInvoiceLink`) → `Telegram.WebApp.openInvoice`; или прямо в чате с ботом командой `/pro` (выбор тарифа кнопками → `sendInvoice`). Оба пути используют `pro.invoice_params`. На `pre_checkout_query` сумма сверяется с текущими ценами (`pro.price_matches`): счёт, выписанный до смены цены, отклоняется. Gatekeeper Bot (`bot/handlers/payments.py`) принимает `pre_checkout_query` и по `successful_payment` продлевает `User.pro_expires_at` (новые покупки суммируются к ещё не истёкшему сроку). Payload `pro:<telegram_id>:<days>`; старый `tag_broadcast:` тоже принимается. Проверка подписки на каналы (`SubscriptionMiddleware`) никогда не блокирует `successful_payment`.
+- Доступ проверяется через `backend.services.pro.has_access` — на создание/обновление (`402` при попытке **включить** Pro-опцию без доступа; выключить можно всегда; Mini App по `402` открывает пейволл) и повторно в воркере перед каждой отправкой (`workers/broadcaster.py`, `workers/responder.py`): после истечения срока Pro-опции перестают действовать, альбом урезается до 1 фото. Новую Pro-опцию добавлять в `PRO_RULE_FIELDS`/`PRO_CAMPAIGN_FIELDS` (схемы) — по ним API решает, нужен ли Pro.
 - Пользователи из `ADMIN_TELEGRAM_IDS` (см. 4.6) имеют Pro бесплатно и бессрочно (`pro.is_admin`).
 
 ### 4.14. Реферальная программа
@@ -170,6 +173,15 @@
 - Пригласивший записывается (`User.referred_by_id`) **только при создании нового** `User` (первый `/start` или первый запрос Mini App) — существующего пользователя нельзя «переписать» на другого пригласившего; приглашать самого себя нельзя.
 - Награда — один раз на приглашённого, при его первой оплате Pro: оба получают `referral_bonus_days` дней Pro (`reward_first_payment`, флаг `User.referral_rewarded`), пригласившему приходит уведомление от бота. Награда только за оплату, не за регистрацию — чтобы фейковые аккаунты не давали бесплатный Pro.
 - Статистика — `GET /api/referrals`, в боте — `/invite`.
+
+### 4.15. Умный автоответ и уведомления (Pro)
+
+- Правило автоответа срабатывает, если совпало по словам **и** прошло свои Pro-фильтры; иначе проверяется следующее правило (`workers/responder.py:_rule_applies`). Фильтры действуют только пока у владельца есть Pro.
+- Расписание: дни недели + интервал `ЧЧ:ММ`–`ЧЧ:ММ` в часовом поясе правила (IANA-имя из браузера); интервал с концом раньше начала переходит через полночь и относится ко дню своего начала (`backend/services/schedule.py`, покрыто тестами). Нужен пакет `tzdata` в `requirements.txt`.
+- «Только новым собеседникам» и «Не мешать живому диалогу» читают последние сообщения чата (`get_chat_history`, не более одного запроса на входящее сообщение); ошибка чтения истории не блокирует ответ.
+- Уведомления владельцу (новое обращение, отчёт о рассылке) шлёт Gatekeeper-бот через Bot API (`workers/notify.py`), best effort; текст чужого сообщения в уведомлении экранируется и никогда не логируется.
+- Каждый отправленный автоответ пишется в `AutoresponderEvent` (без текста и без id собеседника), каждый `FloodWait` — в `FloodWaitEvent`; из них считаются счётчики правил в Mini App и метрики админки (4.6).
+- Рассылки пишут в `BroadcastLog.target` исходную строку цели — по ней считается статистика по чатам. Автоотключение: цель, упавшая `AUTO_DISABLE_AFTER_FAILURES` (3) раза подряд, попадает в `BroadcastCampaign.disabled_targets` и пропускается; вернуть её может только владелец (PATCH `disabled_targets` разрешает лишь убирать элементы).
 
 ## 5. Переменные окружения
 

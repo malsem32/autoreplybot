@@ -105,9 +105,17 @@ export const api = {
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/resume`, { method: "POST" }),
   listCampaignLogs: (accountId, campaignId) =>
     request(`/broadcasts/${accountId}/campaigns/${campaignId}/logs`),
+  getCampaignStats: (accountId, campaignId) =>
+    request(`/broadcasts/${accountId}/campaigns/${campaignId}/stats`),
+
+  listTemplates: () => request("/templates"),
+  createTemplate: (template) => request("/templates", { method: "POST", body: template }),
+  deleteTemplate: (id) => request(`/templates/${id}`, { method: "DELETE" }),
 
   getPro: () => request("/features/pro"),
-  createProInvoice: () => request("/features/pro/invoice", { method: "POST" }),
+  createProInvoice: (plan = "month") =>
+    request("/features/pro/invoice", { method: "POST", body: { plan } }),
+  startTrial: () => request("/features/pro/trial", { method: "POST" }),
   getReferrals: () => request("/referrals"),
 
   adminStats: () => request("/admin/stats"),

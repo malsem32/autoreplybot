@@ -4,7 +4,13 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import PageTitle from "../components/PageTitle.jsx";
-import { formatDate, ProFeatures, useBuyPro } from "../components/pro/PaywallSheet.jsx";
+import {
+  defaultPlan,
+  formatDate,
+  PlanPicker,
+  ProFeatures,
+  useBuyPro,
+} from "../components/pro/PaywallSheet.jsx";
 import Button from "../components/ui/Button.jsx";
 import { ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
 import { ListGroup, ListRow } from "../components/ui/List.jsx";
@@ -13,9 +19,15 @@ import { useApp } from "../state/AppContext.jsx";
 
 function ProCard() {
   const { pro } = useApp();
-  const { buy, buying, error } = useBuyPro();
+  const { buy, trial, buying, error } = useBuyPro();
+  const [plan, setPlan] = useState("year");
+
+  useEffect(() => {
+    if (pro) setPlan(defaultPlan(pro));
+  }, [pro]);
 
   if (!pro) return <Skeleton className="h-64 !rounded-[22px]" />;
+  const selected = pro.plans?.find((p) => p.id === plan);
 
   return (
     <section className="relative overflow-hidden rounded-[22px] bg-surface p-5">
@@ -35,19 +47,35 @@ function ProCard() {
                 ? pro.is_admin
                   ? "Бессрочно, как администратору"
                   : `Активен до ${formatDate(pro.expires_at)}`
-                : `${pro.duration_days} дней · ${pro.stars_price} Stars`}
+                : "Расписание, умные автоответы, статистика и безлимит"}
             </p>
           </div>
         </div>
         <div className="mt-5">
-          <ProFeatures features={pro.features} />
+          <ProFeatures groups={pro.feature_groups} />
         </div>
-        {!pro.is_admin && (
-          <Button variant="pro" className="mt-5 w-full" loading={buying} onClick={buy}>
+        {!pro.is_admin && pro.plans?.length > 0 && (
+          <div className="mt-6">
+            <PlanPicker plans={pro.plans} value={plan} onChange={setPlan} />
+          </div>
+        )}
+        {!pro.is_admin && selected && (
+          <Button variant="pro" className="mt-4 w-full" loading={buying} onClick={() => buy(plan)}>
             <Star className="h-4 w-4 fill-current" />
             {pro.has_access
-              ? `Продлить на ${pro.duration_days} дней`
-              : `Подключить за ${pro.stars_price} Stars`}
+              ? `Продлить на ${selected.title.toLowerCase()} — ${selected.stars} Stars`
+              : `Подключить за ${selected.stars} Stars`}
+          </Button>
+        )}
+        {pro.trial_available && (
+          <Button
+            variant="ghost"
+            className="mt-2 w-full"
+            icon={Gift}
+            disabled={buying}
+            onClick={trial}
+          >
+            Попробовать {pro.trial_days} дн. бесплатно
           </Button>
         )}
         <div className="mt-3">

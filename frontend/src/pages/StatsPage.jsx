@@ -50,6 +50,9 @@ function ProSettings() {
         await api.adminUpdatePro({
           stars_price: Number(form.stars_price),
           duration_days: Number(form.duration_days),
+          quarter_stars_price: Number(form.quarter_stars_price),
+          year_stars_price: Number(form.year_stars_price),
+          trial_days: Number(form.trial_days),
           referral_bonus_days: Number(form.referral_bonus_days),
         }),
       );
@@ -71,7 +74,7 @@ function ProSettings() {
     <form onSubmit={save} className="space-y-4 rounded-[18px] bg-surface p-4">
       <h2 className="font-display text-base font-semibold">Подписка Pro и рефералы</h2>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Цена, Stars" htmlFor="p-price">
+        <Field label="Базовый тариф, Stars" htmlFor="p-price">
           <Input
             id="p-price"
             type="number"
@@ -91,7 +94,38 @@ function ProSettings() {
             onChange={set("duration_days")}
           />
         </Field>
+        <Field label="3 месяца, Stars" hint="0 — скрыть" htmlFor="p-q">
+          <Input
+            id="p-q"
+            type="number"
+            min="0"
+            inputMode="numeric"
+            value={form.quarter_stars_price}
+            onChange={set("quarter_stars_price")}
+          />
+        </Field>
+        <Field label="Год, Stars" hint="0 — скрыть" htmlFor="p-y">
+          <Input
+            id="p-y"
+            type="number"
+            min="0"
+            inputMode="numeric"
+            value={form.year_stars_price}
+            onChange={set("year_stars_price")}
+          />
+        </Field>
       </div>
+      <Field label="Пробный период, дней" hint="один раз, 0 — выключить" htmlFor="p-trial">
+        <Input
+          id="p-trial"
+          type="number"
+          min="0"
+          max="30"
+          inputMode="numeric"
+          value={form.trial_days}
+          onChange={set("trial_days")}
+        />
+      </Field>
       <Field label="Бонус за приглашение, дней" hint="обоим, 0 — выключить" htmlFor="p-ref">
         <Input
           id="p-ref"
@@ -131,9 +165,27 @@ export default function StatsPage() {
         <>
           <Section title="Пользователи">
             <Metric value={stats.users_total} label="всего" />
+            <Metric value={stats.pro_active} label="с активным Pro" tone="text-warn" />
+            <Metric value={stats.users_new_1d} label="новых за сутки" tone="text-sky" />
             <Metric value={stats.users_new_7d} label="новых за 7 дней" tone="text-sky" />
+            <Metric value={stats.users_new_30d} label="новых за 30 дней" tone="text-sky" />
             <Metric value={stats.accounts_total} label="аккаунтов подключено" />
             <Metric value={stats.accounts_active} label="с включённым автопилотом" tone="text-go" />
+          </Section>
+          <Section title="Автоответчик">
+            <Metric value={stats.autoreplies_24h} label="ответов за сутки" tone="text-go" />
+            <Metric value={stats.autoreplies_7d} label="ответов за 7 дней" />
+          </Section>
+          <Section title="Лимиты Telegram за 24 часа">
+            <Metric
+              value={stats.flood_waits_24h}
+              label="FloodWait — Telegram просил подождать"
+              tone={stats.flood_waits_24h ? "text-warn" : "text-ink"}
+            />
+            <Metric
+              value={`${Math.round(stats.flood_wait_seconds_24h / 60)} мин`}
+              label="суммарное ожидание"
+            />
           </Section>
           <Section title="Рассылки">
             <Metric value={stats.campaigns_active} label="идут" tone="text-go" />

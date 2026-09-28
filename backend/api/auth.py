@@ -23,8 +23,8 @@ from backend.core.security import decrypt_secret, encrypt_session
 from backend.core.telegram_errors import RETRYABLE_INPUT_ERRORS, error_id, to_http_error
 from backend.core.uploads import delete_uploads
 from backend.db.session import get_db
-from backend.models.autoresponder_rule import AutoresponderRule
-from backend.models.broadcast import BroadcastCampaign, BroadcastLog
+from backend.models.autoresponder_rule import AutoresponderEvent, AutoresponderRule
+from backend.models.broadcast import BroadcastCampaign, BroadcastLog, FloodWaitEvent
 from backend.models.proxy import Proxy
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
@@ -309,6 +309,8 @@ async def delete_account(
     campaign_ids = [c.id for c in campaigns]
     if campaign_ids:
         await db.execute(delete(BroadcastLog).where(BroadcastLog.campaign_id.in_(campaign_ids)))
+    await db.execute(delete(AutoresponderEvent).where(AutoresponderEvent.account_id == account.id))
+    await db.execute(delete(FloodWaitEvent).where(FloodWaitEvent.account_id == account.id))
     for campaign in campaigns:
         delete_uploads(campaign.photo_paths)
         await db.delete(campaign)

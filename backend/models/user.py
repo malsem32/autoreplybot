@@ -30,4 +30,7 @@ class User(TimestampMixin, Base):
     referral_rewarded: Mapped[bool] = mapped_column(Boolean, default=False)
     referral_days_earned: Mapped[int] = mapped_column(Integer, default=0)
 
+    # One free Pro trial per user (backend/services/pro.py:start_trial).
+    trial_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     accounts: Mapped[list["TelegramAccount"]] = relationship(back_populates="user")

@@ -1,5 +1,15 @@
 import { AnimatePresence, motion } from "framer-motion";
-import { Crown, MessageCircleReply, Plus, Trash2 } from "lucide-react";
+import {
+  BellRing,
+  Clock,
+  Crown,
+  Hand,
+  Keyboard,
+  MessageCircleReply,
+  Plus,
+  Trash2,
+  UserPlus,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import ChipsInput from "../components/composer/ChipsInput.jsx";
@@ -10,12 +20,15 @@ import { photoRefs, photosFromUrls } from "../components/composer/photos.js";
 import RichTextEditor from "../components/composer/RichTextEditor.jsx";
 import NeedAccount from "../components/NeedAccount.jsx";
 import PageTitle from "../components/PageTitle.jsx";
+import OptionRow from "../components/pro/OptionRow.jsx";
 import Button from "../components/ui/Button.jsx";
 import { EmptyState, ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
-import { Field, Label } from "../components/ui/Input.jsx";
+import { Field, Input, Label } from "../components/ui/Input.jsx";
+import { ListGroup } from "../components/ui/List.jsx";
 import Segmented from "../components/ui/Segmented.jsx";
 import Sheet from "../components/ui/Sheet.jsx";
 import Switch from "../components/ui/Switch.jsx";
+import plural from "../lib/plural.js";
 import { confirmDialog, haptic } from "../lib/telegram.js";
 import { useApp } from "../state/AppContext.jsx";
 
@@ -27,13 +40,46 @@ const COOLDOWNS = [
   { value: 24, label: "Сутки" },
 ];
 
-const emptyForm = {
+const WEEKDAYS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+const ACTIVE_WINDOWS = [
+  { value: 15, label: "15 мин" },
+  { value: 30, label: "30 мин" },
+  { value: 60, label: "1 час" },
+  { value: 180, label: "3 часа" },
+];
+
+const TYPING_DELAYS = [
+  { value: 3, label: "3 сек" },
+  { value: 5, label: "5 сек" },
+  { value: 10, label: "10 сек" },
+  { value: 20, label: "20 сек" },
+];
+
+function browserTimezone() {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || "Europe/Moscow";
+  } catch {
+    return "Europe/Moscow";
+  }
+}
+
+const emptyForm = () => ({
   triggerType: "all",
   keywords: [],
   responseText: "",
   cooldownHours: 3,
   photos: [],
-};
+  scheduleEnabled: false,
+  scheduleDays: [0, 1, 2, 3, 4, 5, 6],
+  scheduleStart: "19:00",
+  scheduleEnd: "09:00",
+  timezone: browserTimezone(),
+  newContactsOnly: false,
+  skipActiveMinutes: 0,
+  typingDelay: 0,
+  notifyOwner: false,
+});
 
 function ruleToForm(rule) {
   return {
@@ -42,40 +88,120 @@ function ruleToForm(rule) {
     responseText: rule.response_text,
     cooldownHours: Math.max(1, Math.round(rule.cooldown_seconds / 3600)),
     photos: photosFromUrls(rule.photo_urls),
+    scheduleEnabled: rule.schedule_enabled,
+    scheduleDays: rule.schedule_days,
+    scheduleStart: rule.schedule_start,
+    scheduleEnd: rule.schedule_end,
+    timezone: rule.timezone,
+    newContactsOnly: rule.new_contacts_only,
+    skipActiveMinutes: rule.skip_if_owner_active_minutes,
+    typingDelay: rule.typing_delay_seconds,
+    notifyOwner: rule.notify_owner,
   };
 }
 
-function formToPayload(form) {
+function formToPayload(form, hasPro) {
   return {
     trigger_type: form.triggerType,
     keywords: form.triggerType === "keywords" ? form.keywords : [],
     response_text: form.responseText,
     photos: photoRefs(form.photos),
     cooldown_seconds: Math.max(1, Number(form.cooldownHours)) * 3600,
+    schedule_days: form.scheduleDays,
+    schedule_start: form.scheduleStart,
+    schedule_end: form.scheduleEnd,
+    timezone: form.timezone,
+    // Pro options saved earlier are switched off on edit once Pro expires,
+    // instead of blocking the whole save (the backend would answer 402).
+    schedule_enabled: hasPro && form.scheduleEnabled,
+    new_contacts_only: hasPro && form.newContactsOnly,
+    skip_if_owner_active_minutes: hasPro ? form.skipActiveMinutes : 0,
+    typing_delay_seconds: hasPro ? form.typingDelay : 0,
+    notify_owner: hasPro && form.notifyOwner,
   };
 }
 
+function ScheduleEditor({ form, set }) {
+  const toggleDay = (d) =>
+    set({
+      scheduleDays: form.scheduleDays.includes(d)
+        ? form.scheduleDays.filter((x) => x !== d)
+        : [...form.scheduleDays, d].sort(),
+    });
+  return (
+    <div className="space-y-3">
+      <div className="flex gap-1.5">
+        {WEEKDAYS.map((name, d) => {
+          const on = form.scheduleDays.includes(d);
+          return (
+            <button
+              key={name}
+              type="button"
+              aria-pressed={on}
+              onClick={() => {
+                haptic.select();
+                toggleDay(d);
+              }}
+              className={`h-9 flex-1 rounded-lg text-[13px] font-semibold transition-colors ${
+                on ? "bg-sky text-onsky" : "bg-raised/70 text-muted"
+              }`}
+            >
+              {name}
+            </button>
+          );
+        })}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="С" htmlFor="sch-from">
+          <Input
+            id="sch-from"
+            type="time"
+            value={form.scheduleStart}
+            onChange={(e) => set({ scheduleStart: e.target.value })}
+          />
+        </Field>
+        <Field label="До" htmlFor="sch-to">
+          <Input
+            id="sch-to"
+            type="time"
+            value={form.scheduleEnd}
+            onChange={(e) => set({ scheduleEnd: e.target.value })}
+          />
+        </Field>
+      </div>
+      <p className="text-xs leading-snug text-faint">
+        Если «до» раньше «с», интервал переходит через полночь: 19:00–09:00 — вечер и ночь. Часовой
+        пояс: {form.timezone}.
+      </p>
+    </div>
+  );
+}
+
 function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
+  const { pro } = useApp();
+  const hasPro = Boolean(pro?.has_access);
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (open) {
-      setForm(rule ? ruleToForm(rule) : emptyForm);
+      setForm(rule ? ruleToForm(rule) : emptyForm());
       setError("");
     }
   }, [open, rule]);
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const invalid =
-    !form.responseText.trim() || (form.triggerType === "keywords" && form.keywords.length === 0);
+    !form.responseText.trim() ||
+    (form.triggerType === "keywords" && form.keywords.length === 0) ||
+    (hasPro && form.scheduleEnabled && form.scheduleDays.length === 0);
 
   async function save() {
     setError("");
     setSaving(true);
     try {
-      await onSave(formToPayload(form));
+      await onSave(formToPayload(form, hasPro));
       haptic.success();
     } catch (err) {
       haptic.error();
@@ -161,6 +287,66 @@ function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
           />
         </div>
 
+        <ListGroup
+          title="Умный автоответ"
+          footer={hasPro ? null : "Функции с короной доступны в Pro."}
+        >
+          <OptionRow
+            icon={Clock}
+            title="Рабочие часы"
+            subtitle="Отвечать только в выбранное время"
+            checked={form.scheduleEnabled}
+            onChange={(scheduleEnabled) => set({ scheduleEnabled })}
+            proOnly
+          >
+            <ScheduleEditor form={form} set={set} />
+          </OptionRow>
+          <OptionRow
+            icon={UserPlus}
+            title="Только новым собеседникам"
+            subtitle="Не отвечать тем, с кем вы уже переписывались"
+            checked={form.newContactsOnly}
+            onChange={(newContactsOnly) => set({ newContactsOnly })}
+            proOnly
+          />
+          <OptionRow
+            icon={Hand}
+            title="Не мешать живому диалогу"
+            subtitle="Молчать, если вы сами недавно писали в этот чат"
+            checked={form.skipActiveMinutes > 0}
+            onChange={(v) => set({ skipActiveMinutes: v ? 30 : 0 })}
+            proOnly
+          >
+            <ChoiceChips
+              value={form.skipActiveMinutes}
+              onChange={(skipActiveMinutes) => set({ skipActiveMinutes })}
+              options={ACTIVE_WINDOWS}
+            />
+          </OptionRow>
+          <OptionRow
+            icon={Keyboard}
+            title="Эффект «печатает…»"
+            subtitle="Пауза с индикатором набора перед ответом"
+            checked={form.typingDelay > 0}
+            onChange={(v) => set({ typingDelay: v ? 5 : 0 })}
+            proOnly
+          >
+            <ChoiceChips
+              value={form.typingDelay}
+              onChange={(typingDelay) => set({ typingDelay })}
+              options={TYPING_DELAYS}
+            />
+          </OptionRow>
+          <OptionRow
+            icon={BellRing}
+            title="Уведомлять меня"
+            subtitle="Бот пришлёт вам сообщение о каждом новом обращении"
+            checked={form.notifyOwner}
+            onChange={(notifyOwner) => set({ notifyOwner })}
+            proOnly
+          />
+        </ListGroup>
+
         {(form.responseText || form.photos.length > 0) && (
           <div>
             <Label>Так увидит собеседник</Label>
@@ -176,6 +362,16 @@ function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
 
 function RuleRow({ rule, onOpen, onToggle }) {
   const preview = rule.response_text.replace(/<[^>]+>/g, "");
+  const smart = [
+    rule.schedule_enabled && {
+      icon: Clock,
+      label: `${rule.schedule_start}–${rule.schedule_end}`,
+    },
+    rule.new_contacts_only && { icon: UserPlus, label: "новым" },
+    rule.skip_if_owner_active_minutes > 0 && { icon: Hand, label: "не мешать" },
+    rule.typing_delay_seconds > 0 && { icon: Keyboard, label: "печатает" },
+    rule.notify_owner && { icon: BellRing, label: "уведомления" },
+  ].filter(Boolean);
   return (
     <motion.div
       layout
@@ -210,7 +406,20 @@ function RuleRow({ rule, onOpen, onToggle }) {
           {rule.photo_urls.length > 0 &&
             `${rule.photo_urls.length > 1 ? `Альбом, ${rule.photo_urls.length} фото` : "С фото"} · `}
           повтор не чаще раза в {Math.round(rule.cooldown_seconds / 3600)} ч
+          {` · ${rule.replies_7d} ${plural(rule.replies_7d, "ответ", "ответа", "ответов")} за неделю`}
         </p>
+        {smart.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {smart.map(({ icon: Icon, label }) => (
+              <span
+                key={label}
+                className="inline-flex items-center gap-1 rounded-md bg-warn/12 px-2 py-0.5 text-[11px] font-semibold text-warn"
+              >
+                <Icon className="h-3 w-3" aria-hidden /> {label}
+              </span>
+            ))}
+          </div>
+        )}
       </button>
       <Switch
         checked={rule.is_enabled}

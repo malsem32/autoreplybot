@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.deps import get_current_user
@@ -10,10 +10,13 @@ from backend.models.broadcast import BroadcastCampaign, BroadcastLog
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
 from backend.schemas.broadcast import (
+    PRO_CAMPAIGN_FIELDS,
     BroadcastCampaignIn,
     BroadcastCampaignOut,
     BroadcastCampaignUpdate,
     BroadcastLogOut,
+    CampaignStatsOut,
+    TargetStatsOut,
 )
 from backend.services import pro
 from backend.services.media import resolve_photos
@@ -24,18 +27,22 @@ router = APIRouter(prefix="/api/broadcasts", tags=["broadcasts"])
 _broadcasts_rate_limit = rate_limit("broadcasts", limit=60, window_seconds=60)
 
 
-def _require_pro_for_options(
-    user: User, payload: BroadcastCampaignIn | BroadcastCampaignUpdate
-) -> None:
-    """Tags and forward protection are Pro features (AGENTS.md 4.13)."""
+_PRO_OPTION_MESSAGES = {
+    "tag_random_users": "Теги случайных участников доступны в Pro",
+    "protect_content": "Защита от пересылки доступна в Pro",
+    "auto_disable_failing": "Автоотключение недоступных чатов доступно в Pro",
+    "notify_report": "Отчёты о рассылке доступны в Pro",
+}
+
+
+def _require_pro_for_options(user: User, data: dict) -> None:
+    """Tags, forward protection, auto-disabling and reports are Pro
+    (AGENTS.md 4.13); switching them *off* is always allowed."""
     if pro.has_access(user):
         return
-    if payload.tag_random_users:
-        raise HTTPException(
-            status.HTTP_402_PAYMENT_REQUIRED, "Теги случайных участников доступны в Pro"
-        )
-    if payload.protect_content:
-        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Защита от пересылки доступна в Pro")
+    for field in PRO_CAMPAIGN_FIELDS:
+        if data.get(field):
+            raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, _PRO_OPTION_MESSAGES[field])
 
 
 async def _get_owned_account(db: AsyncSession, user: User, account_id: int) -> TelegramAccount:
@@ -88,7 +95,7 @@ async def create_campaign(
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
     await _get_owned_account(db, user, account_id)
-    _require_pro_for_options(user, payload)
+    _require_pro_for_options(user, payload.model_dump())
     if not pro.has_access(user):
         count = await db.scalar(
             select(func.count())
@@ -121,9 +128,8 @@ async def update_campaign(
     db: AsyncSession = Depends(get_db),
 ) -> BroadcastCampaign:
     campaign = await _get_owned_campaign(db, user, account_id, campaign_id)
-    _require_pro_for_options(user, payload)
-
-    data = payload.model_dump(exclude_unset=True, exclude={"photos"})
+    data = payload.model_dump(exclude_unset=True, exclude={"photos", "disabled_targets"})
+    _require_pro_for_options(user, data)
     if payload.photos is not None:
         new_paths = resolve_photos(payload.photos, user)
         delete_uploads(campaign.photo_paths, keep=new_paths)
@@ -131,6 +137,12 @@ async def update_campaign(
 
     for field, value in data.items():
         setattr(campaign, field, value)
+
+    disabled = list(campaign.disabled_targets or [])
+    if payload.disabled_targets is not None:
+        # Only restoring is allowed here; disabling is the worker's call.
+        disabled = [t for t in disabled if t in payload.disabled_targets]
+    campaign.disabled_targets = [t for t in disabled if t in campaign.target_chats]
 
     # Re-scheduling a finished one-off campaign sends it again at the new time.
     if (
@@ -157,6 +169,63 @@ async def delete_campaign(
     await db.execute(delete(BroadcastLog).where(BroadcastLog.campaign_id == campaign.id))
     await db.delete(campaign)
     await db.commit()
+
+
+@router.get("/{account_id}/campaigns/{campaign_id}/stats", response_model=CampaignStatsOut)
+async def campaign_stats(
+    account_id: int,
+    campaign_id: int,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CampaignStatsOut:
+    """Per-chat delivery statistics (Pro), aggregated in SQL (AGENTS.md 4.6)."""
+    campaign = await _get_owned_campaign(db, user, account_id, campaign_id)
+    if not pro.has_access(user):
+        raise HTTPException(status.HTTP_402_PAYMENT_REQUIRED, "Статистика по чатам доступна в Pro")
+
+    per_target = (
+        select(
+            BroadcastLog.target.label("target"),
+            func.max(BroadcastLog.id).label("last_id"),
+            func.sum(case((BroadcastLog.status == "success", 1), else_=0)).label("sent"),
+            func.sum(case((BroadcastLog.status != "success", 1), else_=0)).label("failed"),
+        )
+        .where(BroadcastLog.campaign_id == campaign.id, BroadcastLog.target.is_not(None))
+        .group_by(BroadcastLog.target)
+        .subquery()
+    )
+    rows = await db.execute(
+        select(
+            per_target.c.target,
+            per_target.c.sent,
+            per_target.c.failed,
+            BroadcastLog.status,
+            BroadcastLog.error_message,
+            BroadcastLog.sent_at,
+        ).join(BroadcastLog, BroadcastLog.id == per_target.c.last_id)
+    )
+    found = {row.target: row for row in rows}
+
+    disabled = set(campaign.disabled_targets or [])
+    targets = []
+    for target in campaign.target_chats:
+        row = found.get(target)
+        targets.append(
+            TargetStatsOut(
+                target=target,
+                sent=int(row.sent) if row else 0,
+                failed=int(row.failed) if row else 0,
+                last_status=row.status if row else None,
+                last_error=row.error_message if row else None,
+                last_sent_at=row.sent_at if row else None,
+                disabled=target in disabled,
+            )
+        )
+    return CampaignStatsOut(
+        sent=sum(t.sent for t in targets),
+        failed=sum(t.failed for t in targets),
+        targets=targets,
+    )
 
 
 @router.get("/{account_id}/campaigns/{campaign_id}/logs", response_model=list[BroadcastLogOut])

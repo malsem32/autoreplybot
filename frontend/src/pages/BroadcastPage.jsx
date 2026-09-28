@@ -1,7 +1,9 @@
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  BarChart3,
   BellOff,
   Crown,
+  FileBarChart,
   History,
   LinkIcon,
   Pause,
@@ -10,11 +12,14 @@ import {
   Send,
   ShieldCheck,
   Trash2,
+  Unplug,
   Users,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
 import CampaignLogsSheet from "../components/CampaignLogsSheet.jsx";
+import CampaignStatsSheet from "../components/CampaignStatsSheet.jsx";
+import OptionRow from "../components/pro/OptionRow.jsx";
 import ChipsInput from "../components/composer/ChipsInput.jsx";
 import ChoiceChips from "../components/composer/ChoiceChips.jsx";
 import MessagePreview from "../components/composer/MessagePreview.jsx";
@@ -26,10 +31,9 @@ import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
 import { EmptyState, ErrorNote, Pill, Skeleton } from "../components/ui/Feedback.jsx";
 import { Field, Input, Label } from "../components/ui/Input.jsx";
-import { ListGroup, ListRow } from "../components/ui/List.jsx";
+import { ListGroup } from "../components/ui/List.jsx";
 import Segmented from "../components/ui/Segmented.jsx";
 import Sheet from "../components/ui/Sheet.jsx";
-import Switch from "../components/ui/Switch.jsx";
 import plural from "../lib/plural.js";
 import { confirmDialog, haptic } from "../lib/telegram.js";
 import { useApp } from "../state/AppContext.jsx";
@@ -75,6 +79,8 @@ const emptyForm = () => ({
   disableNotification: false,
   protectContent: false,
   disableLinkPreview: false,
+  autoDisableFailing: false,
+  notifyReport: false,
 });
 
 function campaignToForm(c) {
@@ -92,6 +98,8 @@ function campaignToForm(c) {
     disableNotification: c.disable_notification,
     protectContent: c.protect_content,
     disableLinkPreview: c.disable_link_preview,
+    autoDisableFailing: c.auto_disable_failing,
+    notifyReport: c.notify_report,
   };
 }
 
@@ -106,6 +114,8 @@ function formToPayload(form) {
     disable_notification: form.disableNotification,
     protect_content: form.protectContent,
     disable_link_preview: form.disableLinkPreview,
+    auto_disable_failing: form.autoDisableFailing,
+    notify_report: form.notifyReport,
   };
   if (form.scheduleType === "recurring") {
     payload.interval_minutes =
@@ -116,32 +126,8 @@ function formToPayload(form) {
   return payload;
 }
 
-function OptionRow({ icon, title, subtitle, checked, onChange, proOnly, hasPro, onLocked }) {
-  const locked = proOnly && !hasPro;
-  return (
-    <ListRow
-      icon={icon}
-      iconClass={proOnly ? "bg-warn/15 text-warn" : "bg-sky/15 text-sky"}
-      title={
-        <span className="inline-flex items-center gap-1.5">
-          {title}
-          {proOnly && <Crown className="h-3.5 w-3.5 text-warn" aria-label="Pro" />}
-        </span>
-      }
-      subtitle={subtitle}
-      right={
-        <Switch
-          checked={checked && !locked}
-          onChange={(v) => (locked ? onLocked() : onChange(v))}
-          label={typeof title === "string" ? title : undefined}
-        />
-      }
-    />
-  );
-}
-
 function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
-  const { pro, openPaywall } = useApp();
+  const { pro } = useApp();
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -168,6 +154,8 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
         // edit after it expires, instead of blocking the whole save.
         payload.tag_random_users = false;
         payload.protect_content = false;
+        payload.auto_disable_failing = false;
+        payload.notify_report = false;
       }
       await onSave(payload);
       haptic.success();
@@ -320,8 +308,6 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
             checked={form.protectContent}
             onChange={(v) => set({ protectContent: v })}
             proOnly
-            hasPro={hasPro}
-            onLocked={() => openPaywall("Запрет пересылки доступен в Pro")}
           />
           <OptionRow
             icon={Users}
@@ -330,8 +316,22 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
             checked={form.tagRandomUsers}
             onChange={(v) => set({ tagRandomUsers: v })}
             proOnly
-            hasPro={hasPro}
-            onLocked={() => openPaywall("Теги участников доступны в Pro")}
+          />
+          <OptionRow
+            icon={Unplug}
+            title="Отключать недоступные чаты"
+            subtitle="Пропускать чат после 3 неудачных отправок подряд"
+            checked={form.autoDisableFailing}
+            onChange={(v) => set({ autoDisableFailing: v })}
+            proOnly
+          />
+          <OptionRow
+            icon={FileBarChart}
+            title="Отчёт в бот"
+            subtitle="Итог каждой рассылки придёт вам сообщением"
+            checked={form.notifyReport}
+            onChange={(v) => set({ notifyReport: v })}
+            proOnly
           />
         </ListGroup>
 
@@ -351,7 +351,7 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
   );
 }
 
-function CampaignCard({ campaign, onOpen, onToggle, onLogs }) {
+function CampaignCard({ campaign, onOpen, onToggle, onLogs, onStats }) {
   const status = STATUS[campaign.status] || STATUS.finished;
   const cover = campaign.photo_urls[0];
   return (
@@ -392,6 +392,8 @@ function CampaignCard({ campaign, onOpen, onToggle, onLogs }) {
               ? `Один раз, ${new Date(campaign.scheduled_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
               : `Каждые ${intervalLabel(campaign.interval_minutes)}`}
             {` · ${campaign.target_chats.length} ${plural(campaign.target_chats.length, "чат", "чата", "чатов")}`}
+            {campaign.disabled_targets.length > 0 &&
+              ` · ${campaign.disabled_targets.length} отключено`}
           </p>
         </div>
       </button>
@@ -417,6 +419,13 @@ function CampaignCard({ campaign, onOpen, onToggle, onLogs }) {
         >
           <History className="h-4 w-4" /> Журнал
         </button>
+        <button
+          type="button"
+          onClick={() => onStats(campaign)}
+          className="flex flex-1 items-center justify-center gap-2 border-l border-line/50 py-3 text-sm font-semibold text-muted active:bg-raised/60"
+        >
+          <BarChart3 className="h-4 w-4" /> Статистика
+        </button>
       </div>
     </motion.article>
   );
@@ -428,6 +437,7 @@ export default function BroadcastPage() {
   const [error, setError] = useState("");
   const [sheet, setSheet] = useState({ open: false, campaign: null });
   const [logs, setLogs] = useState({ open: false, campaign: null });
+  const [stats, setStats] = useState({ open: false, campaign: null });
   const accountId = activeAccount?.id;
 
   useEffect(() => {
@@ -536,6 +546,11 @@ export default function BroadcastPage() {
                 onOpen={(campaign) => setSheet({ open: true, campaign })}
                 onToggle={toggle}
                 onLogs={(campaign) => setLogs({ open: true, campaign })}
+                onStats={(campaign) =>
+                  pro?.has_access
+                    ? setStats({ open: true, campaign })
+                    : openPaywall("Статистика по каждому чату доступна в Pro")
+                }
               />
             ))}
           </AnimatePresence>
@@ -566,6 +581,13 @@ export default function BroadcastPage() {
         campaign={logs.campaign}
         accountId={accountId}
         onClose={() => setLogs((l) => ({ ...l, open: false }))}
+      />
+      <CampaignStatsSheet
+        open={stats.open}
+        campaign={stats.campaign}
+        accountId={accountId}
+        onClose={() => setStats((s) => ({ ...s, open: false }))}
+        onChanged={replace}
       />
     </div>
   );
