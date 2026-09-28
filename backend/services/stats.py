@@ -1,9 +1,11 @@
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from pydantic import BaseModel
 from sqlalchemy import ColumnElement, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.models.admin import Payment
 from backend.models.autoresponder_rule import AutoresponderEvent
 from backend.models.broadcast import BroadcastCampaign, BroadcastLog, FloodWaitEvent
 from backend.models.telegram_account import TelegramAccount
@@ -76,4 +78,49 @@ async def collect_dashboard_stats(db: AsyncSession) -> DashboardStats:
         autoreplies_7d=await count(AutoresponderEvent, AutoresponderEvent.created_at >= since_7d),
         flood_waits_24h=await count(FloodWaitEvent, FloodWaitEvent.created_at >= since_24h),
         flood_wait_seconds_24h=int(flood_seconds or 0),
+    )
+
+
+class Timeseries(BaseModel):
+    """Daily series for the admin charts (UTC days, oldest first)."""
+
+    days: list[str]
+    users: list[int]
+    autoreplies: list[int]
+    sent: list[int]
+    failed: list[int]
+    stars: list[int]
+    stars_30d: int
+    payments_30d: int
+    stars_total: int
+
+
+async def collect_timeseries(db: AsyncSession, days: int = 30) -> Timeseries:
+    """Per-day SQL aggregates (GROUP BY date) — never a Python pass over logs."""
+    today = datetime.now(UTC).date()
+    start = today - timedelta(days=days - 1)
+    since = datetime(start.year, start.month, start.day, tzinfo=UTC)
+    labels = [(start + timedelta(days=i)).isoformat() for i in range(days)]
+
+    async def per_day(column: Any, value: Any = None, *where: ColumnElement[bool]) -> list[int]:
+        day = func.date(column)
+        agg = func.count() if value is None else func.coalesce(func.sum(value), 0)
+        rows = await db.execute(select(day, agg).where(column >= since, *where).group_by(day))
+        by_day = {str(d)[:10]: int(n or 0) for d, n in rows.tuples().all()}
+        return [by_day.get(label, 0) for label in labels]
+
+    stars = await per_day(Payment.created_at, Payment.stars)
+    return Timeseries(
+        days=labels,
+        users=await per_day(User.created_at),
+        autoreplies=await per_day(AutoresponderEvent.created_at),
+        sent=await per_day(BroadcastLog.sent_at, None, BroadcastLog.status == "success"),
+        failed=await per_day(BroadcastLog.sent_at, None, BroadcastLog.status == "error"),
+        stars=stars,
+        stars_30d=sum(stars),
+        payments_30d=await db.scalar(
+            select(func.count()).select_from(Payment).where(Payment.created_at >= since)
+        )
+        or 0,
+        stars_total=await db.scalar(select(func.coalesce(func.sum(Payment.stars), 0))) or 0,
     )

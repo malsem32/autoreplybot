@@ -213,8 +213,8 @@ export default function ProfilePage() {
         <ListGroup title="Администрирование">
           <ListRow
             icon={BarChart3}
-            title="Статистика и цены"
-            subtitle="Пользователи, рассылки, стоимость Pro"
+            title="Админка"
+            subtitle="Графики, пользователи и аккаунты, выдача Pro, цены"
             chevron
             onClick={() => navigate("/admin/stats")}
           />

@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import AdminUsers from "../components/admin/AdminUsers.jsx";
+import BarChart from "../components/admin/BarChart.jsx";
 import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
 import { ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
 import { Field, Input } from "../components/ui/Input.jsx";
+import Segmented from "../components/ui/Segmented.jsx";
 import useBackButton from "../hooks/useBackButton.js";
 import { api } from "../api/client.js";
 import { haptic } from "../lib/telegram.js";
@@ -144,61 +147,106 @@ function ProSettings() {
   );
 }
 
-export default function StatsPage() {
-  useBackButton("/profile");
+function Overview() {
   const [stats, setStats] = useState(null);
+  const [series, setSeries] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api
-      .adminStats()
-      .then(setStats)
+    Promise.all([api.adminStats(), api.adminTimeseries()])
+      .then(([s, t]) => {
+        setStats(s);
+        setSeries(t);
+      })
       .catch((err) => setError(err.message));
   }, []);
 
+  if (error) return <ErrorNote>{error}</ErrorNote>;
+  if (!stats || !series) return <Skeleton className="h-64" />;
+
+  const stars = (v) => `${v.toLocaleString("ru-RU")} ⭐`;
   return (
-    <div className="space-y-5 p-4">
-      <PageTitle title="Статистика" />
-      <ErrorNote>{error}</ErrorNote>
-      {!stats && !error && <Skeleton className="h-64" />}
-      {stats && (
-        <>
-          <Section title="Пользователи">
-            <Metric value={stats.users_total} label="всего" />
-            <Metric value={stats.pro_active} label="с активным Pro" tone="text-warn" />
-            <Metric value={stats.users_new_1d} label="новых за сутки" tone="text-sky" />
-            <Metric value={stats.users_new_7d} label="новых за 7 дней" tone="text-sky" />
-            <Metric value={stats.users_new_30d} label="новых за 30 дней" tone="text-sky" />
-            <Metric value={stats.accounts_total} label="аккаунтов подключено" />
-            <Metric value={stats.accounts_active} label="с включённым автопилотом" tone="text-go" />
-          </Section>
-          <Section title="Автоответчик">
-            <Metric value={stats.autoreplies_24h} label="ответов за сутки" tone="text-go" />
-            <Metric value={stats.autoreplies_7d} label="ответов за 7 дней" />
-          </Section>
-          <Section title="Лимиты Telegram за 24 часа">
-            <Metric
-              value={stats.flood_waits_24h}
-              label="FloodWait — Telegram просил подождать"
-              tone={stats.flood_waits_24h ? "text-warn" : "text-ink"}
-            />
-            <Metric
-              value={`${Math.round(stats.flood_wait_seconds_24h / 60)} мин`}
-              label="суммарное ожидание"
-            />
-          </Section>
-          <Section title="Рассылки">
-            <Metric value={stats.campaigns_active} label="идут" tone="text-go" />
-            <Metric value={stats.campaigns_paused} label="на паузе" tone="text-warn" />
-            <Metric value={stats.campaigns_finished} label="завершены" />
-          </Section>
-          <Section title="Сообщения за 24 часа">
-            <Metric value={stats.messages_sent_24h} label="доставлено" tone="text-go" />
-            <Metric value={stats.messages_failed_24h} label="с ошибкой" tone="text-danger" />
-          </Section>
-        </>
-      )}
-      <ProSettings />
+    <div className="space-y-5">
+      <Section title="Главное">
+        <Metric
+          value={stats.users_total}
+          label={`пользователей · +${stats.users_new_7d} за неделю`}
+        />
+        <Metric value={stats.pro_active} label="с активным Pro" tone="text-warn" />
+        <Metric
+          value={stats.accounts_total}
+          label={`аккаунтов · ${stats.accounts_active} работают`}
+          tone="text-go"
+        />
+        <Metric
+          value={stars(series.stars_30d)}
+          label={`выручка за 30 дней · ${series.payments_30d} оплат`}
+        />
+      </Section>
+
+      <div className="space-y-3">
+        <BarChart
+          title="Новые пользователи"
+          days={series.days}
+          series={[{ key: "u", label: "Новые", values: series.users, color: "rgb(var(--sky))" }]}
+        />
+        <BarChart
+          title="Выручка"
+          days={series.days}
+          format={stars}
+          note={`за 30 дней · всего за всё время ${stars(series.stars_total)}`}
+          series={[{ key: "s", label: "Stars", values: series.stars, color: "rgb(var(--warn))" }]}
+        />
+        <BarChart
+          title="Автоответы"
+          days={series.days}
+          series={[
+            { key: "a", label: "Ответы", values: series.autoreplies, color: "rgb(var(--sky))" },
+          ]}
+        />
+        <BarChart
+          title="Сообщения рассылок"
+          days={series.days}
+          series={[
+            { key: "ok", label: "Доставлено", values: series.sent, color: "rgb(var(--go))" },
+            { key: "err", label: "Ошибка", values: series.failed, color: "rgb(var(--danger))" },
+          ]}
+        />
+      </div>
+
+      <Section title="Рассылки сейчас">
+        <Metric value={stats.campaigns_active} label="идут" tone="text-go" />
+        <Metric value={stats.campaigns_paused} label="на паузе" tone="text-warn" />
+        <Metric value={stats.campaigns_finished} label="завершены" />
+        <Metric
+          value={stats.flood_waits_24h}
+          label={`FloodWait за сутки · ${Math.round(stats.flood_wait_seconds_24h / 60)} мин ожидания`}
+          tone={stats.flood_waits_24h ? "text-warn" : "text-ink"}
+        />
+      </Section>
+    </div>
+  );
+}
+
+export default function StatsPage() {
+  useBackButton("/profile");
+  const [tab, setTab] = useState("overview");
+
+  return (
+    <div className="space-y-4 p-4">
+      <PageTitle title="Админка" subtitle="Видно только администраторам" />
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "overview", label: "Обзор" },
+          { value: "users", label: "Люди" },
+          { value: "prices", label: "Цены" },
+        ]}
+      />
+      {tab === "overview" && <Overview />}
+      {tab === "users" && <AdminUsers />}
+      {tab === "prices" && <ProSettings />}
     </div>
   );
 }

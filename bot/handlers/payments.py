@@ -13,6 +13,7 @@ from aiogram.types import (
 )
 
 from backend.db.session import SessionLocal
+from backend.models.admin import Payment
 from backend.services import pro, referrals
 
 logger = logging.getLogger(__name__)
@@ -100,6 +101,15 @@ async def successful_payment(message: Message) -> None:
     telegram_id, duration_days = parsed
     async with SessionLocal() as db:
         user = await pro.grant_access(db, telegram_id, duration_days)
+        db.add(
+            Payment(
+                user_id=user.id,
+                stars=payment.total_amount,
+                days=duration_days,
+                charge_id=payment.telegram_payment_charge_id,
+            )
+        )
+        await db.commit()
         reward = await referrals.reward_first_payment(db, user)
         await db.refresh(user)
 

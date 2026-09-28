@@ -159,6 +159,13 @@ export const api = {
   getReferrals: () => request("/referrals"),
 
   adminStats: () => request("/admin/stats"),
+  adminTimeseries: () => request("/admin/timeseries"),
+  adminUsers: (q = "", filter = "all", offset = 0) =>
+    request(`/admin/users?q=${encodeURIComponent(q)}&filter=${filter}&offset=${offset}`),
+  adminUser: (id) => request(`/admin/users/${id}`),
+  adminGrantPro: (id, days, notify = true) =>
+    request(`/admin/users/${id}/pro`, { method: "POST", body: { days, notify } }),
+  adminRevokePro: (id) => request(`/admin/users/${id}/pro`, { method: "DELETE" }),
   adminGetPro: () => request("/admin/pro"),
   adminUpdatePro: (patch) => request("/admin/pro", { method: "PATCH", body: patch }),
   listProxies: () => request("/admin/proxies"),
