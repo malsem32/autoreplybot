@@ -4,6 +4,7 @@
 
 - **Название продукта:** Автопилот (username бота: `@jrvisibut2`, см. `BOT_USERNAME` в разделе 5).
 - **Ассеты бренда:** `assets/branding/avatar_512.png` (аватар бота, 512×512, для `/setuserpic` в BotFather), `assets/branding/chat_preview_1280x720.png` (заглушка для пустого чата / картинка в описании). Черновой стиль — тёмно-синий фон, белый "руль" как символ автопилота; при ребрендинге менять оба файла синхронно и не хардкодить старые пути в коде.
+- **Команды бота** (`/setcommands` в @BotFather): `start - Открыть Автопилот`, `pro - Купить Автопилот Pro за Stars`, `invite - Пригласить друга и получить дни Pro`.
 - **Тексты BotFather** (задаются через `/setabouttext` и `/setdescription` в @BotFather, не хранятся в коде — фиксируются здесь как источник правды):
   - *About (профиль бота, до 120 символов):* `Ваш личный автопилот в Telegram: отвечает клиентам и делает рассылки, пока вы заняты 🚀`
   - *Description (экран пустого чата, до 512 символов):* `Привет! Я — Автопилот. Беру на себя рутину в Telegram: отвечаю вашим клиентам, пока вы не на связи, и бережно рассылаю сообщения по чатам, соблюдая лимиты Telegram. Подключите аккаунт и настройте всё под себя — это займёт пару минут.`
@@ -13,7 +14,7 @@
 Система автоматизации в Telegram, состоящая из пяти компонентов:
 
 1. **Gatekeeper Bot (Bot API)** — входная точка: проверка подписки пользователя на обязательные каналы/чаты, запуск Mini App.
-2. **Telegram Mini App (Frontend)** — веб-интерфейс для авторизации аккаунтов, настройки автоответчика и рассылок. Для Telegram `user_id` из `ADMIN_TELEGRAM_IDS` в нём же открывается раздел статистики — отдельной Admin Panel с логином/паролем в проекте нет.
+2. **Telegram Mini App (Frontend)** — веб-интерфейс для авторизации аккаунтов, настройки автоответчика и рассылок, покупки Pro и реферальной программы. Для Telegram `user_id` из `ADMIN_TELEGRAM_IDS` в нём же открывается раздел статистики — отдельной Admin Panel с логином/паролем в проекте нет.
 3. **Backend API** — обработка запросов от Mini App, валидация `initData` (в т.ч. для admin-эндпоинтов — см. 4.6), управление зашифрованными MTProto-сессиями.
 4. **Userbot Worker (MTProto Engine)** — клиентские инстансы (Pyrogram/Telethon), слушающие личные сообщения (автоответ) и отправляющие рассылки.
 5. **Task Scheduler** — планировщик периодических и отложенных задач (APScheduler / ARQ).
@@ -37,15 +38,16 @@
 │   ├── middlewares/      # Проверка членства в чатах
 │   └── keyboards/        # Кнопки с WebAppInfo
 ├── backend/              # FastAPI сервис
-│   ├── api/              # auth (код+QR), autoresponder, broadcasts, dialogs, uploads, admin (по ADMIN_TELEGRAM_IDS)
-│   ├── core/             # конфиг, безопасность (Fernet, initData hash), uploads.py (сохранение фото)
+│   ├── api/              # auth (код+QR), autoresponder, broadcasts, dialogs, uploads, features (Pro), referrals, admin (по ADMIN_TELEGRAM_IDS)
+│   ├── core/             # конфиг, безопасность (Fernet, initData hash), uploads.py, rate_limit.py, telegram_errors.py
 │   ├── models/           # SQLAlchemy модели
 │   ├── schemas/          # Pydantic схемы
-│   └── services/         # бизнес-логика (stats и т.п.)
+│   └── services/         # бизнес-логика (pro, referrals, media, stats и т.п.)
 ├── workers/              # Userbot движок и планировщик
 │   ├── client_manager.py # пул запущенных Pyrogram клиентов
 │   ├── responder.py      # обработчики on_message для автоответа
 │   ├── broadcaster.py    # логика отправки сообщений
+│   ├── sending.py        # текст / фото / альбом + опции отправки (общий для рассылок и автоответа)
 │   └── scheduler.py      # периодические задачи
 ├── frontend/             # Telegram Mini App (React + Vite), включает раздел статистики
 │   └── src/{api,components,pages}/
@@ -67,9 +69,11 @@
 ### 4.1. Безопасность MTProto-сессий
 
 - Запрещено хранить `StringSession` в открытом виде — только зашифрованной `ENCRYPTION_KEY` (Fernet) перед записью в БД.
-- Два способа входа, оба заканчиваются в общем `_finalize_login` (`backend/api/auth.py`): по коду — `send_code(phone)` → `phone_code_hash` → `sign_in(phone, phone_code_hash, code)` → при 2FA `check_password(password)`; по QR — `auth.exportLoginToken` (raw MTProto), опрос `/api/auth/qr/{request_id}/poll` до `LoginTokenSuccess`. Оба пути очищают временные клиенты/токены сразу после использования.
-- QR-вход не подтверждён живым тестом на реальных серверах Telegram (песочница разработки не имеет доступа к MTProto) — переход через другой дата-центр (`LoginTokenMigrateTo`) обрабатывается как явный рестарт flow, а не бесшовная миграция; при доработке смотреть `backend/api/auth.py:qr_poll`.
-- Один пользователь может подключить несколько `TelegramAccount` — уникальности по `phone`/`user_id` в схеме нет и не должно появляться.
+- MTProto-библиотека — `kurigram` (поддерживаемый форк Pyrogram, импортируется как `pyrogram`, актуальный слой). Не откатываться на `pyrogram==2.0.106`: его слой 158 Telegram всё чаще отвергает при входе (коды «не приходят», `UPDATE_APP_TO_LOGIN`). Формат session string совместим.
+- Два способа входа, оба заканчиваются в общем `_finalize_login` (`backend/api/auth.py`): по коду — `send_code(phone)` → ответ сообщает, **куда** ушёл код (`code_type`: чаще всего `app` — в чат «Telegram», а не SMS) и `next_type`/`timeout` для `resend_code` → `sign_in` → при 2FA ответ `status="password_required"` с подсказкой → `check_password`; по QR — `auth.exportLoginToken`, опрос `/api/auth/qr/{request_id}/poll`: токен перевыпускается до истечения (30 с), `LoginTokenMigrateTo` проходится через `auth.importLoginToken` на нужном DC, 2FA — через `/qr/{id}/password`.
+- Незавершённые входы хранятся в памяти процесса с TTL 10 минут, ключ — `<user.id>:<phone>` (QR — `request_id` + проверка владельца): один пользователь Mini App не может продолжить чужой вход. Неверный код/пароль можно ввести повторно без нового кода. Каждый MTProto-шаг входа ограничен `TELEGRAM_TIMEOUT_SECONDS`, чтобы при недоступном Telegram пользователь получал ошибку, а не вечную загрузку. Ошибки Telegram переводятся в понятные сообщения в `backend/core/telegram_errors.py`.
+- QR-вход и вход по коду проверены сквозными тестами с фейковым клиентом (`tests/test_auth_api.py`), но не живым тестом на реальных серверах Telegram (песочница разработки не имеет доступа к MTProto).
+- Один пользователь может подключить несколько `TelegramAccount` — уникальности по `phone`/`user_id` в схеме нет и не должно появляться. Повторный вход в тот же аккаунт (тот же `phone` у того же пользователя) обновляет существующую строку, а не плодит дубликат.
 - `POST /api/auth/send_code` (и только он) может уходить через прокси из таблицы `proxies` (см. 4.12) — снижает шанс, что Telegram посчитает IP самого VPS подозрительным и приглушит доставку SMS для конкретного номера. `sign_in`/`check_password`/QR-flow прокси не используют.
 - Никогда не логировать: номера телефонов, коды подтверждения, пароли 2FA, session string, `api_id`/`api_hash`, пароли прокси.
 
@@ -82,7 +86,8 @@
 
 - Между отправками сообщений в разные чаты — случайная задержка 20–45 секунд.
 - Все MTProto-вызовы оборачивать в обработку `FloodWait`: при исключении — sleep `e.value + 5` сек или откладывание задачи, без ретрая "в лоб".
-- Рассыльщик поддерживает spintax `{Вариант1|Вариант2|Вариант3}`.
+- Рассыльщик и автоответчик поддерживают spintax `{Вариант1|Вариант2|Вариант3}`.
+- Текст сообщений — HTML-подмножество Telegram (`<b>`, `<i>`, `<u>`, `<s>`, `<tg-spoiler>`, `<code>`, `<pre>`, `<blockquote>`, `<a href>`), его генерирует панель форматирования Mini App; отправка — парсером Pyrogram по умолчанию (HTML + Markdown). Отправка текста/фото/альбома — только через `workers/sending.py:send_content`: подпись к фото ≤ 1024 символов, более длинный текст уходит отдельным сообщением после фото.
 - Автоответчик: игнорировать `message.from_user.is_bot`, cooldown не менее 1–2 часов на диалог (`user_id`).
 - Каждое сообщение, отправленное рассыльщиком (`broadcaster.py`), обязано заканчиваться фиксированной подписью: `Отправлено через @{BOT_USERNAME}` — добавляется автоматически к тексту после подстановки spintax, не хранится как часть `text_template` в БД.
 - `BroadcastCampaign.target_chats` — список строк: числовой ID, `@username` или `t.me/...`-ссылка (включая инвайт-ссылки `t.me/+`/`t.me/joinchat/`); резолвится в реальный chat_id при каждой отправке через `workers/targets.py:resolve_target`, а не при сохранении кампании. Ссылки на папки чатов (`t.me/addlist/...`) пока не разворачиваются в список чатов — `resolve_target` кидает понятную ошибку вместо угадывания непроверенной raw-схемы `chatlists.*`.
@@ -116,6 +121,7 @@
 ### 4.7. Rate limiting Backend API
 
 - Эндпоинты, инициирующие внешние действия (`/api/broadcasts/*`, `/api/autoresponder/*`, отправка кода авторизации), должны быть защищены rate limit'ом на уровне пользователя (например, через Redis), а не только антибан-задержками в воркере — иначе Mini App сама может стать вектором злоупотребления.
+- Реализация — `backend/core/rate_limit.py`: зависимость `rate_limit(scope, limit, window_seconds)` вместо `get_current_user` (fixed window в Redis). При недоступном Redis пропускает запрос (fail-open), чтобы падение Redis не блокировало вход всем.
 
 ### 4.8. Границы применения
 
@@ -136,10 +142,11 @@
 
 ### 4.11. Фото-вложения (автоответ и рассылки)
 
-- Загрузка — `POST /api/uploads/photo` (только `initData`, лимит `MAX_UPLOAD_BYTES`, только `jpeg/png/webp`); файл пишется в `/app/uploads/<uuid>.<ext>` (`backend/core/uploads.py`), путь хранится в `AutoresponderRule.photo_path`/`BroadcastCampaign.photo_path`.
-- Отдача — `GET /api/uploads/{filename}` **намеренно без `initData`**: `<img src>` не может передать кастомный заголовок, поэтому доступ держится на непредсказуемости UUID-имени файла; наружу в API отдаётся не `photo_path`, а вычисляемый `photo_url` (см. `_photo_url` в `backend/schemas/autoresponder.py`).
-- `/app/uploads` — общий docker volume `uploads_data`, примонтирован и в `backend` (запись при загрузке), и в `worker` (чтение при отправке через `send_photo`/`reply_photo`). Новый сервис, которому нужны фото, обязан подключить тот же volume.
-- При удалении/замене фото у правила или кампании (`remove_photo` / новый `photo_path` в PATCH) — старый файл удаляется с диска (`delete_upload`), не копится мусор.
+- Загрузка — `POST /api/uploads/photo` (только `initData`, лимит `MAX_UPLOAD_BYTES`, только `jpeg/png/webp`); файл пишется в `/app/uploads/<uuid>.<ext>` (`backend/core/uploads.py`). У правила и кампании — список `photo_paths` (до 10; 2+ фото уходят альбомом, первое — обложка с текстом). Без Pro — 1 фото (см. 4.13).
+- В API фото передаются полем `photos` — ссылками на загрузки (путь, `/api/uploads/<name>` или имя файла); сервер принимает **только** UUID-файлы из `UPLOAD_DIR` (`resolve_upload_ref`) — иначе можно было бы заставить воркер отправить в чат любой файл с сервера. Наружу отдаются вычисляемые `photo_urls`, не пути.
+- Отдача — `GET /api/uploads/{filename}` **намеренно без `initData`**: `<img src>` не может передать кастомный заголовок, поэтому доступ держится на непредсказуемости UUID-имени файла.
+- `/app/uploads` — общий docker volume `uploads_data`, примонтирован и в `backend` (запись при загрузке), и в `worker` (чтение при отправке). Новый сервис, которому нужны фото, обязан подключить тот же volume.
+- При замене списка фото (`photos` в PATCH) или удалении правила/кампании/аккаунта старые файлы удаляются с диска (`delete_uploads`), не копится мусор.
 
 ### 4.12. Прокси-пул
 
@@ -149,13 +156,20 @@
 - Выбор прокси для `send_code` (`backend/api/auth.py:_pick_send_code_proxy`) — случайный среди активных, с приоритетом у тех, чья последняя проверка была `alive`; если прокси нет или все неактивны — запрос идёт напрямую.
 - Требует `python-socks[asyncio]` в зависимостях (это использует Pyrogram для подключения через прокси) — держать в `requirements.txt` синхронно с `kurigram` (форк Pyrogram, импортируется как `pyrogram`).
 
-### 4.13. Платная функция «Теги случайных участников» (Telegram Stars)
+### 4.13. Подписка «Автопилот Pro» (Telegram Stars)
 
-- `BroadcastCampaign.tag_random_users` можно включить только при наличии доступа — платно, через Telegram Stars (валюта `XTR`). См. явное исключение из общего запрета на массовые упоминания в 4.8.
-- Цена (`stars_price`) и срок действия (`duration_days`) — в единственной строке `TagFeatureSetting` (`backend/models/feature_settings.py`), редактируются админом через `GET/PATCH /api/admin/tag-feature` (защищено `ADMIN_TELEGRAM_IDS`, см. 4.6).
-- Покупка: Mini App → `POST /api/features/tag-broadcast/invoice` (создаёт `createInvoiceLink` через Bot API) → `Telegram.WebApp.openInvoice`; Gatekeeper Bot (`bot/handlers/payments.py`) принимает `pre_checkout_query` и по `successful_payment` продлевает `User.tag_feature_expires_at` (новые покупки суммируются к ещё не истёкшему сроку, не перезаписывают его).
-- Доступ проверяется через `backend.services.tag_feature.has_access` — и на создание/обновление кампании (`backend/api/broadcasts.py`, `402` без доступа), и повторно в `workers/broadcaster.py` перед каждой отправкой (чтобы рассылка переставала тегать бесплатно после истечения срока, а не только в момент создания).
-- Пользователи из `ADMIN_TELEGRAM_IDS` (см. 4.6) имеют доступ к функции бесплатно и бессрочно вне зависимости от `tag_feature_expires_at` (`tag_feature.is_admin`).
+- Pro — платный доступ на срок, оплачивается Telegram Stars (валюта `XTR`). Открывает: альбомы до 10 фото (без Pro — 1), теги случайных участников (`BroadcastCampaign.tag_random_users`, см. явное исключение в 4.8), защиту от пересылки (`protect_content`), безлимит правил и рассылок (без Pro — по 3 на аккаунт). Список и лимиты — в `backend/services/pro.py`.
+- Цена (`stars_price`), срок (`duration_days`) и бонус рефералки (`referral_bonus_days`) — в единственной строке `ProSetting` (`backend/models/feature_settings.py`), редактируются админом через `GET/PATCH /api/admin/pro` (защищено `ADMIN_TELEGRAM_IDS`, см. 4.6).
+- Покупка: из Mini App — `POST /api/features/pro/invoice` (`createInvoiceLink`) → `Telegram.WebApp.openInvoice`; или прямо в чате с ботом командой `/pro` (`sendInvoice`). Оба пути используют `pro.invoice_params`. Gatekeeper Bot (`bot/handlers/payments.py`) принимает `pre_checkout_query` и по `successful_payment` продлевает `User.pro_expires_at` (новые покупки суммируются к ещё не истёкшему сроку). Payload `pro:<telegram_id>:<days>`; старый `tag_broadcast:` тоже принимается. Проверка подписки на каналы (`SubscriptionMiddleware`) никогда не блокирует `successful_payment`.
+- Доступ проверяется через `backend.services.pro.has_access` — на создание/обновление (`402` без доступа, Mini App по `402` открывает пейволл) и повторно в воркере перед каждой отправкой (`workers/broadcaster.py`, `workers/responder.py`): после истечения срока теги и защита выключаются, альбом урезается до 1 фото.
+- Пользователи из `ADMIN_TELEGRAM_IDS` (см. 4.6) имеют Pro бесплатно и бессрочно (`pro.is_admin`).
+
+### 4.14. Реферальная программа
+
+- Ссылка — `https://t.me/{BOT_USERNAME}?start=ref_<telegram_id>` (`backend/services/referrals.py`); также учитывается `start_param=ref_<id>` из `initData`, если Mini App открыта по ссылке `startapp`.
+- Пригласивший записывается (`User.referred_by_id`) **только при создании нового** `User` (первый `/start` или первый запрос Mini App) — существующего пользователя нельзя «переписать» на другого пригласившего; приглашать самого себя нельзя.
+- Награда — один раз на приглашённого, при его первой оплате Pro: оба получают `referral_bonus_days` дней Pro (`reward_first_payment`, флаг `User.referral_rewarded`), пригласившему приходит уведомление от бота. Награда только за оплату, не за регистрацию — чтобы фейковые аккаунты не давали бесплатный Pro.
+- Статистика — `GET /api/referrals`, в боте — `/invite`.
 
 ## 5. Переменные окружения
 

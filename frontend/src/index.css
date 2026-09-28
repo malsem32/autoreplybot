@@ -1,3 +1,93 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Brand: night-sky navy with a white steering wheel (assets/branding).
+   Channels are "r g b" so Tailwind can apply opacity modifiers. */
+:root,
+:root[data-theme="dark"] {
+  --bg: 11 22 51; /* #0B1633 */
+  --surface: 19 34 74; /* #13224A */
+  --raised: 28 46 94; /* #1C2E5E */
+  --line: 43 64 118;
+  --ink: 240 244 255;
+  --muted: 152 168 206;
+  --faint: 98 116 160;
+  --sky: 92 200 255; /* #5CC8FF */
+  --onsky: 6 24 48;
+  --go: 61 220 151; /* #3DDC97 */
+  --warn: 255 181 71; /* #FFB547 */
+  --danger: 255 107 107;
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg: 239 243 250;
+  --surface: 255 255 255;
+  --raised: 229 236 248;
+  --line: 214 223 239;
+  --ink: 12 24 54;
+  --muted: 84 101 140;
+  --faint: 140 154 186;
+  --sky: 0 136 214;
+  --onsky: 255 255 255;
+  --go: 16 163 104;
+  --warn: 204 125 0;
+  --danger: 220 53 69;
+  color-scheme: light;
+}
+
+@layer base {
+  html,
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+  body {
+    min-height: 100vh;
+    min-height: var(--tg-viewport-stable-height, 100vh);
+  }
+  :focus-visible {
+    @apply outline-none ring-2 ring-sky/70 ring-offset-2 ring-offset-bg;
+  }
+  input,
+  textarea,
+  select {
+    font-size: 16px; /* prevents iOS zoom on focus */
+  }
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-tile bg-raised/60 border border-line px-3.5 py-3 text-[15px] text-ink placeholder:text-faint transition-colors focus:border-sky focus:bg-raised/80 focus:outline-none focus-visible:ring-0 focus-visible:ring-offset-0;
+  }
+  .tg-preview a {
+    @apply text-sky underline-offset-2 hover:underline;
+  }
+  .tg-preview blockquote {
+    @apply border-l-[3px] border-sky pl-2.5 my-1 text-ink/90;
+  }
+  .tg-preview code {
+    @apply rounded bg-black/20 px-1 font-mono text-[0.9em];
+  }
+  .tg-preview pre {
+    @apply rounded-md bg-black/20 p-2 font-mono text-[0.9em] whitespace-pre-wrap;
+  }
+  .tg-preview .spoiler {
+    @apply rounded bg-ink/30 text-transparent transition-colors cursor-pointer select-none;
+  }
+  .tg-preview .spoiler.revealed {
+    @apply bg-transparent text-inherit;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

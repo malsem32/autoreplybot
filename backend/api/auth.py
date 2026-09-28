@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import re
@@ -56,6 +57,15 @@ CLIENT_DEVICE_MODEL = "Автопилот"
 CLIENT_SYSTEM_VERSION = "Web"
 
 _LOGIN_EXPIRED = "Сессия входа устарела. Запросите код заново"
+
+# Upper bound for a single MTProto step during login. Pyrogram keeps
+# retrying a connection that can't be established; without this the Mini
+# App would spin forever instead of telling the user something is wrong.
+TELEGRAM_TIMEOUT_SECONDS = 25
+
+
+async def _with_timeout(awaitable: Any) -> Any:
+    return await asyncio.wait_for(awaitable, timeout=TELEGRAM_TIMEOUT_SECONDS)
 
 
 @dataclass
@@ -193,13 +203,17 @@ async def _connect_for_send_code(name: str, proxy: dict | None) -> Client:
     if proxy is not None:
         client = _new_client(name, proxy=proxy)
         try:
-            await client.connect()
+            await _with_timeout(client.connect())
             return client
         except Exception:  # noqa: BLE001 - fall back to a direct connection
             logger.warning("send_code proxy failed, falling back to direct connection")
             await _safe_disconnect(client)
     client = _new_client(name)
-    await client.connect()
+    try:
+        await _with_timeout(client.connect())
+    except BaseException:
+        await _safe_disconnect(client)
+        raise
     return client
 
 
@@ -328,7 +342,7 @@ async def send_code(
         raise to_http_error(exc) from exc
 
     try:
-        sent = await client.send_code(phone)
+        sent = await _with_timeout(client.send_code(phone))
     except Exception as exc:
         await _safe_disconnect(client)
         raise to_http_error(exc) from exc
@@ -364,7 +378,7 @@ async def resend_code(
         )
 
     try:
-        sent = await pending.client.resend_code(phone, pending.phone_code_hash)
+        sent = await _with_timeout(pending.client.resend_code(phone, pending.phone_code_hash))
     except Exception as exc:
         if error_id(exc) in {"PHONE_CODE_EXPIRED", "SEND_CODE_UNAVAILABLE", "AUTH_RESTART"}:
             await _drop_pending(key)
@@ -530,15 +544,16 @@ async def qr_start(
     request_id = uuid.uuid4().hex
     client = _new_client(f"qr_{request_id}")
     try:
-        await client.connect()
+        await _with_timeout(client.connect())
     except Exception as exc:
+        await _safe_disconnect(client)
         raise to_http_error(exc) from exc
 
     qr = _QrLogin(client=client, user_id=user.id, token_expires_at=0)
     _watch_login_token_updates(client, qr)
 
     try:
-        result = await _export_login_token(client)
+        result = await _with_timeout(_export_login_token(client))
     except Exception as exc:
         await _safe_disconnect(client)
         raise to_http_error(exc) from exc

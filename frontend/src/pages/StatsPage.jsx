@@ -1,33 +1,61 @@
 import { useEffect, useState } from "react";
-import { api } from "../api/client.js";
-import StatCard from "../components/StatCard.jsx";
+import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
-import Card from "../components/ui/Card.jsx";
-import { Input, Label } from "../components/ui/Input.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
+import { Field, Input } from "../components/ui/Input.jsx";
+import useBackButton from "../hooks/useBackButton.js";
+import { api } from "../api/client.js";
+import { haptic } from "../lib/telegram.js";
+import { useApp } from "../state/AppContext.jsx";
 
-function TagFeatureSettings() {
-  const [settings, setSettings] = useState(null);
-  const [saving, setSaving] = useState(false);
+function Metric({ value, label, tone = "text-ink" }) {
+  return (
+    <div className="rounded-tile bg-surface p-4">
+      <p className={`font-display text-[26px] font-semibold leading-none tabular-nums ${tone}`}>
+        {value}
+      </p>
+      <p className="mt-2 text-[13px] leading-snug text-muted">{label}</p>
+    </div>
+  );
+}
+
+function Section({ title, children }) {
+  return (
+    <section>
+      <h2 className="mb-2 px-1 text-[13px] font-medium text-muted">{title}</h2>
+      <div className="grid grid-cols-2 gap-2">{children}</div>
+    </section>
+  );
+}
+
+function ProSettings() {
+  const { refreshPro, toast } = useApp();
+  const [form, setForm] = useState(null);
   const [error, setError] = useState("");
-  const [justSaved, setJustSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    api.adminGetTagFeature().then(setSettings).catch((err) => setError(err.message));
+    api
+      .adminGetPro()
+      .then(setForm)
+      .catch((err) => setError(err.message));
   }, []);
 
-  async function handleSave(e) {
+  async function save(e) {
     e.preventDefault();
     setError("");
     setSaving(true);
     try {
-      const updated = await api.adminUpdateTagFeature({
-        stars_price: Number(settings.stars_price),
-        duration_days: Number(settings.duration_days),
-      });
-      setSettings(updated);
-      setJustSaved(true);
-      setTimeout(() => setJustSaved(false), 3000);
+      setForm(
+        await api.adminUpdatePro({
+          stars_price: Number(form.stars_price),
+          duration_days: Number(form.duration_days),
+          referral_bonus_days: Number(form.referral_bonus_days),
+        }),
+      );
+      haptic.success();
+      toast("Настройки Pro сохранены");
+      refreshPro();
     } catch (err) {
       setError(err.message);
     } finally {
@@ -35,95 +63,90 @@ function TagFeatureSettings() {
     }
   }
 
+  if (!form) return error ? <ErrorNote>{error}</ErrorNote> : <Skeleton className="h-48" />;
+
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
   return (
-    <div>
-      <h2 className="text-sm uppercase text-slate-500 mb-2">Теги случайных участников</h2>
-      <Card>
-        {!settings ? (
-          <p className="text-sm text-slate-400">Загрузка…</p>
-        ) : (
-          <form onSubmit={handleSave} className="space-y-3">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>Цена, ⭐ Stars</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={settings.stars_price}
-                  onChange={(e) => setSettings({ ...settings, stars_price: e.target.value })}
-                />
-              </div>
-              <div>
-                <Label>Срок действия, дней</Label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={settings.duration_days}
-                  onChange={(e) => setSettings({ ...settings, duration_days: e.target.value })}
-                />
-              </div>
-            </div>
-            <p className="text-xs text-slate-500">
-              Администраторы (`ADMIN_TELEGRAM_IDS`) пользуются функцией бесплатно и бессрочно —
-              эти настройки касаются только платного доступа остальных пользователей.
-            </p>
-            {error && <p className="text-red-400 text-sm">{error}</p>}
-            <div className="flex items-center gap-3">
-              <Button type="submit" disabled={saving}>
-                {saving ? "Сохранение…" : "Сохранить"}
-              </Button>
-              {justSaved && <span className="text-xs text-green-400">Сохранено</span>}
-            </div>
-          </form>
-        )}
-      </Card>
-    </div>
+    <form onSubmit={save} className="space-y-4 rounded-[18px] bg-surface p-4">
+      <h2 className="font-display text-base font-semibold">Подписка Pro и рефералы</h2>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Цена, Stars" htmlFor="p-price">
+          <Input
+            id="p-price"
+            type="number"
+            min="1"
+            inputMode="numeric"
+            value={form.stars_price}
+            onChange={set("stars_price")}
+          />
+        </Field>
+        <Field label="Срок, дней" htmlFor="p-days">
+          <Input
+            id="p-days"
+            type="number"
+            min="1"
+            inputMode="numeric"
+            value={form.duration_days}
+            onChange={set("duration_days")}
+          />
+        </Field>
+      </div>
+      <Field label="Бонус за приглашение, дней" hint="обоим, 0 — выключить" htmlFor="p-ref">
+        <Input
+          id="p-ref"
+          type="number"
+          min="0"
+          inputMode="numeric"
+          value={form.referral_bonus_days}
+          onChange={set("referral_bonus_days")}
+        />
+      </Field>
+      <ErrorNote>{error}</ErrorNote>
+      <Button type="submit" className="w-full" loading={saving}>
+        Сохранить
+      </Button>
+    </form>
   );
 }
 
 export default function StatsPage() {
+  useBackButton("/profile");
   const [stats, setStats] = useState(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.adminStats().then(setStats).catch((err) => setError(err.message));
+    api
+      .adminStats()
+      .then(setStats)
+      .catch((err) => setError(err.message));
   }, []);
 
-  if (error) return <p className="p-4 text-red-400">{error}</p>;
-  if (!stats) return <p className="p-4 text-slate-400">Загрузка…</p>;
-
   return (
-    <div className="p-4 space-y-6">
-      <PageHeader icon="📊" title="Статистика" />
-
-      <TagFeatureSettings />
-
-      <div>
-        <h2 className="text-sm uppercase text-slate-500 mb-2">Пользователи</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Всего пользователей" value={stats.users_total} />
-          <StatCard label="Новых за 7 дней" value={stats.users_new_7d} />
-          <StatCard label="Подключено аккаунтов" value={stats.accounts_total} />
-          <StatCard label="Активных аккаунтов" value={stats.accounts_active} />
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm uppercase text-slate-500 mb-2">Рассылки</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Активные кампании" value={stats.campaigns_active} />
-          <StatCard label="На паузе" value={stats.campaigns_paused} />
-          <StatCard label="Завершённые" value={stats.campaigns_finished} />
-        </div>
-      </div>
-
-      <div>
-        <h2 className="text-sm uppercase text-slate-500 mb-2">Сообщения (24ч)</h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Отправлено успешно" value={stats.messages_sent_24h} />
-          <StatCard label="Ошибок отправки" value={stats.messages_failed_24h} />
-        </div>
-      </div>
+    <div className="space-y-5 p-4">
+      <PageTitle title="Статистика" />
+      <ErrorNote>{error}</ErrorNote>
+      {!stats && !error && <Skeleton className="h-64" />}
+      {stats && (
+        <>
+          <Section title="Пользователи">
+            <Metric value={stats.users_total} label="всего" />
+            <Metric value={stats.users_new_7d} label="новых за 7 дней" tone="text-sky" />
+            <Metric value={stats.accounts_total} label="аккаунтов подключено" />
+            <Metric value={stats.accounts_active} label="с включённым автопилотом" tone="text-go" />
+          </Section>
+          <Section title="Рассылки">
+            <Metric value={stats.campaigns_active} label="идут" tone="text-go" />
+            <Metric value={stats.campaigns_paused} label="на паузе" tone="text-warn" />
+            <Metric value={stats.campaigns_finished} label="завершены" />
+          </Section>
+          <Section title="Сообщения за 24 часа">
+            <Metric value={stats.messages_sent_24h} label="доставлено" tone="text-go" />
+            <Metric value={stats.messages_failed_24h} label="с ошибкой" tone="text-danger" />
+          </Section>
+        </>
+      )}
+      <ProSettings />
     </div>
   );
 }

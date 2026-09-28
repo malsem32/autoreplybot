@@ -356,3 +356,18 @@ async def test_qr_session_is_private_to_its_owner(api, fake_client):
     start = (await api.post("/api/auth/qr/start", headers=auth_headers(1))).json()
     resp = await api.get(f"/api/auth/qr/{start['request_id']}/poll", headers=auth_headers(2))
     assert resp.status_code == 404
+
+
+async def test_unreachable_telegram_fails_fast_instead_of_hanging(api, monkeypatch):
+    import asyncio
+
+    async def hang(self):
+        await asyncio.sleep(3600)
+
+    monkeypatch.setattr(FakeClient, "connect", hang)
+    monkeypatch.setattr(auth, "TELEGRAM_TIMEOUT_SECONDS", 0.05)
+    resp = await api.post(
+        "/api/auth/send_code", json={"phone": "+79991234567"}, headers=auth_headers()
+    )
+    assert resp.status_code == 503
+    assert "Telegram" in resp.json()["detail"]

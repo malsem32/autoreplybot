@@ -1,66 +1,178 @@
+import { AnimatePresence, motion } from "framer-motion";
+import {
+  BellOff,
+  Crown,
+  History,
+  LinkIcon,
+  Pause,
+  Play,
+  Plus,
+  Send,
+  ShieldCheck,
+  Trash2,
+  Users,
+} from "lucide-react";
 import { useEffect, useState } from "react";
-import WebApp from "@twa-dev/sdk";
 import { api } from "../api/client.js";
-import CampaignLogsModal from "../components/CampaignLogsModal.jsx";
-import PhotoPicker from "../components/PhotoPicker.jsx";
-import Badge from "../components/ui/Badge.jsx";
+import CampaignLogsSheet from "../components/CampaignLogsSheet.jsx";
+import ChipsInput from "../components/composer/ChipsInput.jsx";
+import ChoiceChips from "../components/composer/ChoiceChips.jsx";
+import MessagePreview from "../components/composer/MessagePreview.jsx";
+import PhotoPicker from "../components/composer/PhotoPicker.jsx";
+import { photoRefs, photosFromUrls } from "../components/composer/photos.js";
+import RichTextEditor from "../components/composer/RichTextEditor.jsx";
+import NeedAccount from "../components/NeedAccount.jsx";
+import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
-import Card from "../components/ui/Card.jsx";
-import { Input, Label, Select, Textarea } from "../components/ui/Input.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { EmptyState, ErrorNote, Pill, Skeleton } from "../components/ui/Feedback.jsx";
+import { Field, Input, Label } from "../components/ui/Input.jsx";
+import { ListGroup, ListRow } from "../components/ui/List.jsx";
+import Segmented from "../components/ui/Segmented.jsx";
+import Sheet from "../components/ui/Sheet.jsx";
+import Switch from "../components/ui/Switch.jsx";
+import plural from "../lib/plural.js";
+import { confirmDialog, haptic } from "../lib/telegram.js";
+import { useApp } from "../state/AppContext.jsx";
 
-const emptyForm = {
-  title: "",
-  textTemplate: "",
-  chatIds: "",
-  tagRandomUsers: false,
-  scheduleType: "recurring",
-  intervalMinutes: 60,
-  scheduledAt: "",
-  photo: null,
+const INTERVALS = [
+  { value: 30, label: "30 мин" },
+  { value: 60, label: "1 час" },
+  { value: 180, label: "3 часа" },
+  { value: 360, label: "6 часов" },
+  { value: 720, label: "12 часов" },
+  { value: 1440, label: "Сутки" },
+];
+
+const STATUS = {
+  active: { tone: "go", label: "Идёт" },
+  paused: { tone: "warn", label: "Пауза" },
+  finished: { tone: "muted", label: "Завершена" },
 };
 
-function toLocalDatetimeInput(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
+function toLocalInput(iso) {
+  const d = iso ? new Date(iso) : new Date(Date.now() + 15 * 60 * 1000);
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, onTagFeatureChanged }) {
-  const [form, setForm] = useState(initial);
+function intervalLabel(minutes) {
+  const preset = INTERVALS.find((i) => i.value === minutes);
+  if (preset) return preset.label.toLowerCase();
+  if (minutes % 60 === 0) return `${minutes / 60} ч`;
+  return `${minutes} мин`;
+}
+
+const emptyForm = () => ({
+  title: "",
+  text: "",
+  photos: [],
+  targets: [],
+  scheduleType: "recurring",
+  interval: 60,
+  customInterval: "",
+  scheduledAt: toLocalInput(null),
+  tagRandomUsers: false,
+  disableNotification: false,
+  protectContent: false,
+  disableLinkPreview: false,
+});
+
+function campaignToForm(c) {
+  const preset = INTERVALS.some((i) => i.value === c.interval_minutes);
+  return {
+    title: c.title,
+    text: c.text_template,
+    photos: photosFromUrls(c.photo_urls),
+    targets: c.target_chats,
+    scheduleType: c.schedule_type,
+    interval: preset ? c.interval_minutes : "custom",
+    customInterval: preset ? "" : String(c.interval_minutes),
+    scheduledAt: toLocalInput(c.scheduled_at),
+    tagRandomUsers: c.tag_random_users,
+    disableNotification: c.disable_notification,
+    protectContent: c.protect_content,
+    disableLinkPreview: c.disable_link_preview,
+  };
+}
+
+function formToPayload(form) {
+  const payload = {
+    title: form.title.trim(),
+    text_template: form.text,
+    photos: photoRefs(form.photos),
+    target_chats: form.targets,
+    schedule_type: form.scheduleType,
+    tag_random_users: form.tagRandomUsers,
+    disable_notification: form.disableNotification,
+    protect_content: form.protectContent,
+    disable_link_preview: form.disableLinkPreview,
+  };
+  if (form.scheduleType === "recurring") {
+    payload.interval_minutes =
+      form.interval === "custom" ? Math.max(1, Number(form.customInterval) || 60) : form.interval;
+  } else {
+    payload.scheduled_at = new Date(form.scheduledAt).toISOString();
+  }
+  return payload;
+}
+
+function OptionRow({ icon, title, subtitle, checked, onChange, proOnly, hasPro, onLocked }) {
+  const locked = proOnly && !hasPro;
+  return (
+    <ListRow
+      icon={icon}
+      iconClass={proOnly ? "bg-warn/15 text-warn" : "bg-sky/15 text-sky"}
+      title={
+        <span className="inline-flex items-center gap-1.5">
+          {title}
+          {proOnly && <Crown className="h-3.5 w-3.5 text-warn" aria-label="Pro" />}
+        </span>
+      }
+      subtitle={subtitle}
+      right={
+        <Switch
+          checked={checked && !locked}
+          onChange={(v) => (locked ? onLocked() : onChange(v))}
+          label={typeof title === "string" ? title : undefined}
+        />
+      }
+    />
+  );
+}
+
+function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
+  const { pro, openPaywall } = useApp();
+  const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [buying, setBuying] = useState(false);
+  const hasPro = Boolean(pro?.has_access);
 
-  const tagAccess = tagFeature?.has_access ?? false;
-
-  async function handleBuyTagFeature() {
-    setError("");
-    setBuying(true);
-    try {
-      const { invoice_link: link } = await api.createTagFeatureInvoice();
-      WebApp.openInvoice(link, async (status) => {
-        if (status === "paid") {
-          const fresh = await api.getTagFeatureStatus();
-          onTagFeatureChanged?.(fresh);
-          setForm((f) => ({ ...f, tagRandomUsers: true }));
-        }
-        setBuying(false);
-      });
-    } catch (err) {
-      setError(err.message);
-      setBuying(false);
+  useEffect(() => {
+    if (open) {
+      setForm(campaign ? campaignToForm(campaign) : emptyForm());
+      setError("");
     }
-  }
+  }, [open, campaign]);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const invalid = !form.title.trim() || !form.text.trim() || form.targets.length === 0;
+  const signature = pro?.bot_username ? `Отправлено через @${pro.bot_username}` : "";
+
+  async function save() {
     setError("");
     setSaving(true);
     try {
-      await onSubmit({ ...form, tagRandomUsers: tagAccess && form.tagRandomUsers });
+      const payload = formToPayload(form);
+      if (!hasPro) {
+        // Pro options saved while a subscription was active are dropped on
+        // edit after it expires, instead of blocking the whole save.
+        payload.tag_random_users = false;
+        payload.protect_content = false;
+      }
+      await onSave(payload);
+      haptic.success();
     } catch (err) {
+      haptic.error();
       setError(err.message);
     } finally {
       setSaving(false);
@@ -68,338 +180,393 @@ function CampaignForm({ initial, onSubmit, onCancel, submitLabel, tagFeature, on
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div>
-        <Label>Название кампании</Label>
-        <Input
-          value={form.title}
-          onChange={(e) => setForm({ ...form, title: e.target.value })}
-          required
-        />
-      </div>
-
-      <div>
-        <Label>Текст сообщения</Label>
-        <Textarea
-          placeholder="{Привет|Добрый день}! Есть отличное предложение…"
-          value={form.textTemplate}
-          onChange={(e) => setForm({ ...form, textTemplate: e.target.value })}
-          required
-        />
-        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-          {tagAccess ? (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={campaign ? "Рассылка" : "Новая рассылка"}
+      footer={
+        <div className="flex gap-2">
+          {campaign && (
             <Button
-              type="button"
-              variant={form.tagRandomUsers ? "primary" : "secondary"}
-              onClick={() => setForm({ ...form, tagRandomUsers: !form.tagRandomUsers })}
-            >
-              Теги случайных участников: {form.tagRandomUsers ? "Вкл" : "Выкл"}
-            </Button>
-          ) : (
-            <Button type="button" variant="secondary" disabled={buying} onClick={handleBuyTagFeature}>
-              {buying
-                ? "Открываем оплату…"
-                : `Купить теги за ${tagFeature?.stars_price ?? "…"} ⭐ (${tagFeature?.duration_days ?? "…"} дн.)`}
-            </Button>
+              variant="danger"
+              icon={Trash2}
+              onClick={() => onDelete(campaign)}
+              aria-label="Удалить рассылку"
+            />
           )}
-        </div>
-        <p className="text-xs text-slate-500 mt-1">
-          Если теги включены, к концу каждого сообщения незаметно добавляются упоминания 5
-          случайных участников чата.
-          {tagFeature && !tagFeature.is_admin && tagFeature.expires_at && (
-            <>
-              {" "}
-              Доступ {tagAccess ? "активен" : "истёк"} до{" "}
-              {new Date(tagFeature.expires_at).toLocaleString("ru-RU")}.
-            </>
-          )}
-        </p>
-      </div>
-
-      <div>
-        <Label>Фото (необязательно)</Label>
-        <PhotoPicker
-          previewUrl={form.photo?.previewUrl}
-          onChange={(photo) => setForm({ ...form, photo })}
-        />
-      </div>
-
-      <div>
-        <Label>Чаты — через запятую (ID, @юзернейм или ссылка t.me/…)</Label>
-        <Input
-          placeholder="-1001234567890, @my_channel, https://t.me/+AbCdEf"
-          value={form.chatIds}
-          onChange={(e) => setForm({ ...form, chatIds: e.target.value })}
-          required
-        />
-      </div>
-
-      <div>
-        <Label>Расписание</Label>
-        <Select
-          value={form.scheduleType}
-          onChange={(e) => setForm({ ...form, scheduleType: e.target.value })}
-        >
-          <option value="recurring">Повторять с интервалом</option>
-          <option value="once">Отправить один раз в указанное время</option>
-        </Select>
-      </div>
-
-      {form.scheduleType === "recurring" ? (
-        <div>
-          <Label>Интервал, минут</Label>
-          <Input
-            type="number"
-            min="1"
-            value={form.intervalMinutes}
-            onChange={(e) => setForm({ ...form, intervalMinutes: e.target.value })}
-          />
-        </div>
-      ) : (
-        <div>
-          <Label>Дата и время отправки</Label>
-          <Input
-            type="datetime-local"
-            value={form.scheduledAt}
-            onChange={(e) => setForm({ ...form, scheduledAt: e.target.value })}
-            required
-          />
-        </div>
-      )}
-
-      {error && <p className="text-red-400 text-sm">{error}</p>}
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={saving} className="flex-1">
-          {saving ? "Сохранение…" : submitLabel}
-        </Button>
-        {onCancel && (
-          <Button type="button" variant="secondary" onClick={onCancel}>
-            Отмена
+          <Button className="flex-1" icon={Send} loading={saving} disabled={invalid} onClick={save}>
+            {campaign ? "Сохранить" : "Запустить рассылку"}
           </Button>
+        </div>
+      }
+    >
+      <div className="space-y-5 pt-1">
+        <Field label="Название" hint="видно только вам" htmlFor="c-title">
+          <Input
+            id="c-title"
+            value={form.title}
+            onChange={(e) => set({ title: e.target.value })}
+            placeholder="Акция выходного дня"
+            maxLength={255}
+          />
+        </Field>
+
+        <Field label="Сообщение" htmlFor="c-text">
+          <RichTextEditor
+            id="c-text"
+            value={form.text}
+            onChange={(text) => set({ text })}
+            limit={form.photos.length ? 1024 : 4096}
+            placeholder="{Привет|Добрый день}! Только до воскресенья — скидка 20% на всё."
+          />
+          {form.photos.length > 0 && (
+            <p className="mt-1.5 text-xs text-faint">
+              Подпись к фото — до 1024 символов. Более длинный текст придёт отдельным сообщением
+              сразу после фото.
+            </p>
+          )}
+        </Field>
+
+        <Field label="Фото">
+          <PhotoPicker value={form.photos} onChange={(photos) => set({ photos })} />
+        </Field>
+
+        <Field label="Куда отправлять" hint="Enter или запятая" htmlFor="c-targets">
+          <ChipsInput
+            id="c-targets"
+            value={form.targets}
+            onChange={(targets) => set({ targets })}
+            placeholder="@my_channel, t.me/+AbCdEf, -100123…"
+          />
+          <p className="mt-1.5 text-xs leading-snug text-faint">
+            Юзернейм, ссылка t.me или ID чата. По ссылке-приглашению аккаунт сначала вступит в чат.
+            Между чатами — пауза 20–45 секунд, чтобы Telegram не ограничил аккаунт.
+          </p>
+        </Field>
+
+        <div className="space-y-3">
+          <Label>Когда отправлять</Label>
+          <Segmented
+            value={form.scheduleType}
+            onChange={(scheduleType) => set({ scheduleType })}
+            options={[
+              { value: "recurring", label: "Регулярно" },
+              { value: "once", label: "Один раз" },
+            ]}
+          />
+          <AnimatePresence mode="wait" initial={false}>
+            {form.scheduleType === "recurring" ? (
+              <motion.div
+                key="rec"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="space-y-3"
+              >
+                <ChoiceChips
+                  value={form.interval}
+                  onChange={(interval) => set({ interval })}
+                  options={[...INTERVALS, { value: "custom", label: "Свой" }]}
+                />
+                {form.interval === "custom" && (
+                  <Input
+                    type="number"
+                    min="1"
+                    inputMode="numeric"
+                    value={form.customInterval}
+                    onChange={(e) => set({ customInterval: e.target.value })}
+                    placeholder="Интервал в минутах"
+                    aria-label="Интервал в минутах"
+                  />
+                )}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="once"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <Input
+                  type="datetime-local"
+                  value={form.scheduledAt}
+                  onChange={(e) => set({ scheduledAt: e.target.value })}
+                  aria-label="Дата и время отправки"
+                />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <ListGroup title="Параметры">
+          <OptionRow
+            icon={BellOff}
+            title="Без звука"
+            subtitle="Получатели не услышат уведомление"
+            checked={form.disableNotification}
+            onChange={(v) => set({ disableNotification: v })}
+          />
+          <OptionRow
+            icon={LinkIcon}
+            title="Без превью ссылок"
+            subtitle="Не показывать карточку сайта под текстом"
+            checked={form.disableLinkPreview}
+            onChange={(v) => set({ disableLinkPreview: v })}
+          />
+          <OptionRow
+            icon={ShieldCheck}
+            title="Запрет пересылки"
+            subtitle="Сообщение нельзя переслать или сохранить"
+            checked={form.protectContent}
+            onChange={(v) => set({ protectContent: v })}
+            proOnly
+            hasPro={hasPro}
+            onLocked={() => openPaywall("Запрет пересылки доступен в Pro")}
+          />
+          <OptionRow
+            icon={Users}
+            title="Теги участников"
+            subtitle="Незаметно упомянуть 5 случайных участников чата"
+            checked={form.tagRandomUsers}
+            onChange={(v) => set({ tagRandomUsers: v })}
+            proOnly
+            hasPro={hasPro}
+            onLocked={() => openPaywall("Теги участников доступны в Pro")}
+          />
+        </ListGroup>
+
+        {(form.text || form.photos.length > 0) && (
+          <div>
+            <Label>Предпросмотр</Label>
+            <MessagePreview text={form.text} photos={form.photos} signature={signature} />
+            <p className="mt-1.5 text-xs text-faint">
+              Подпись о сервисе добавляется автоматически.
+            </p>
+          </div>
         )}
+
+        <ErrorNote>{error}</ErrorNote>
       </div>
-    </form>
+    </Sheet>
   );
 }
 
-function formToPayload(form) {
-  const payload = {
-    title: form.title,
-    text_template: form.textTemplate,
-    photo_path: form.photo?.path,
-    target_chats: form.chatIds
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean),
-    tag_random_users: form.tagRandomUsers,
-    schedule_type: form.scheduleType,
-  };
-  if (form.scheduleType === "recurring") {
-    payload.interval_minutes = Number(form.intervalMinutes);
-  } else {
-    payload.scheduled_at = new Date(form.scheduledAt).toISOString();
-  }
-  return payload;
+function CampaignCard({ campaign, onOpen, onToggle, onLogs }) {
+  const status = STATUS[campaign.status] || STATUS.finished;
+  const cover = campaign.photo_urls[0];
+  return (
+    <motion.article
+      layout
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, x: -40 }}
+      className="overflow-hidden rounded-[18px] bg-surface"
+    >
+      <button
+        type="button"
+        onClick={() => onOpen(campaign)}
+        className="flex w-full gap-3 p-4 text-left"
+      >
+        {cover && (
+          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
+            <img src={cover} alt="" className="h-full w-full object-cover" />
+            {campaign.photo_urls.length > 1 && (
+              <span className="absolute bottom-1 right-1 rounded-md bg-black/60 px-1.5 text-[10px] font-bold text-white">
+                +{campaign.photo_urls.length - 1}
+              </span>
+            )}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <h3 className="truncate text-[16px] font-semibold">{campaign.title}</h3>
+            <Pill tone={status.tone} dot>
+              {status.label}
+            </Pill>
+          </div>
+          <p className="mt-1 line-clamp-2 text-[14px] leading-snug text-muted">
+            {campaign.text_template.replace(/<[^>]+>/g, "")}
+          </p>
+          <p className="mt-1.5 text-xs text-faint">
+            {campaign.schedule_type === "once"
+              ? `Один раз, ${new Date(campaign.scheduled_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+              : `Каждые ${intervalLabel(campaign.interval_minutes)}`}
+            {` · ${campaign.target_chats.length} ${plural(campaign.target_chats.length, "чат", "чата", "чатов")}`}
+          </p>
+        </div>
+      </button>
+      <div className="flex border-t border-line/50">
+        {campaign.status !== "finished" && (
+          <button
+            type="button"
+            onClick={() => onToggle(campaign)}
+            className="flex flex-1 items-center justify-center gap-2 py-3 text-sm font-semibold text-sky active:bg-raised/60"
+          >
+            {campaign.status === "active" ? (
+              <Pause className="h-4 w-4" />
+            ) : (
+              <Play className="h-4 w-4" />
+            )}
+            {campaign.status === "active" ? "Пауза" : "Запустить"}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onLogs(campaign)}
+          className="flex flex-1 items-center justify-center gap-2 border-l border-line/50 py-3 text-sm font-semibold text-muted active:bg-raised/60 first:border-l-0"
+        >
+          <History className="h-4 w-4" /> Журнал
+        </button>
+      </div>
+    </motion.article>
+  );
 }
 
-function campaignToForm(c) {
-  return {
-    title: c.title,
-    textTemplate: c.text_template,
-    chatIds: c.target_chats.join(", "),
-    tagRandomUsers: c.tag_random_users,
-    scheduleType: c.schedule_type,
-    intervalMinutes: c.interval_minutes,
-    scheduledAt: toLocalDatetimeInput(c.scheduled_at),
-    photo: c.photo_url ? { path: null, previewUrl: c.photo_url } : null,
-  };
-}
-
-function CampaignCard({ campaign, accountId, onChanged, tagFeature, onTagFeatureChanged }) {
-  const [editing, setEditing] = useState(false);
-  const [showLogs, setShowLogs] = useState(false);
+export default function BroadcastPage() {
+  const { activeAccount, pro, openPaywall, toast } = useApp();
+  const [campaigns, setCampaigns] = useState(null);
   const [error, setError] = useState("");
+  const [sheet, setSheet] = useState({ open: false, campaign: null });
+  const [logs, setLogs] = useState({ open: false, campaign: null });
+  const accountId = activeAccount?.id;
 
-  async function handleUpdate(form) {
-    const payload = formToPayload(form);
-    if (!payload.photo_path) delete payload.photo_path;
-    if (!form.photo) payload.remove_photo = true;
-    const updated = await api.updateCampaign(accountId, campaign.id, payload);
-    onChanged(updated);
-    setEditing(false);
+  useEffect(() => {
+    if (!accountId) return;
+    setCampaigns(null);
+    api
+      .listCampaigns(accountId)
+      .then(setCampaigns)
+      .catch((err) => {
+        setError(err.message);
+        setCampaigns([]);
+      });
+  }, [accountId]);
+
+  if (!activeAccount) return <NeedAccount title="Рассылки" />;
+
+  const limit = pro && !pro.has_access ? pro.free_max_campaigns : null;
+  const atLimit = limit != null && campaigns && campaigns.length >= limit;
+
+  function openNew() {
+    if (atLimit) {
+      openPaywall(`Без Pro — до ${limit} рассылок на аккаунт`);
+      return;
+    }
+    setSheet({ open: true, campaign: null });
   }
 
-  async function handleDelete() {
-    setError("");
+  const replace = (updated) =>
+    setCampaigns((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+
+  async function save(payload) {
+    if (sheet.campaign) {
+      replace(await api.updateCampaign(accountId, sheet.campaign.id, payload));
+      toast("Рассылка сохранена");
+    } else {
+      const created = await api.createCampaign(accountId, payload);
+      setCampaigns((prev) => [...prev, created]);
+      toast("Рассылка запущена");
+    }
+    setSheet({ open: false, campaign: null });
+  }
+
+  async function remove(campaign) {
+    if (!(await confirmDialog(`Удалить рассылку «${campaign.title}» вместе с журналом?`))) return;
     try {
       await api.deleteCampaign(accountId, campaign.id);
-      onChanged(null, campaign.id);
+      setCampaigns((prev) => prev.filter((c) => c.id !== campaign.id));
+      setSheet({ open: false, campaign: null });
+      toast("Рассылка удалена");
     } catch (err) {
-      setError(err.message);
+      toast(err.message, "danger");
     }
   }
 
-  async function handleToggleStatus() {
-    setError("");
+  async function toggle(campaign) {
     try {
       const updated =
         campaign.status === "active"
           ? await api.pauseCampaign(accountId, campaign.id)
           : await api.resumeCampaign(accountId, campaign.id);
-      onChanged(updated);
+      replace(updated);
+      haptic.select();
     } catch (err) {
-      setError(err.message);
+      toast(err.message, "danger");
     }
-  }
-
-  if (editing) {
-    return (
-      <Card>
-        <CampaignForm
-          initial={campaignToForm(campaign)}
-          submitLabel="Сохранить"
-          onSubmit={handleUpdate}
-          onCancel={() => setEditing(false)}
-          tagFeature={tagFeature}
-          onTagFeatureChanged={onTagFeatureChanged}
-        />
-      </Card>
-    );
   }
 
   return (
-    <Card className="space-y-2">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex-1">
-          <div className="flex items-center gap-2">
-            <p className="font-medium">{campaign.title}</p>
-            <Badge status={campaign.status} />
-          </div>
-          <p className="text-sm text-slate-400 mt-1">{campaign.text_template}</p>
-          <p className="text-xs text-slate-500 mt-1">
-            {campaign.schedule_type === "once"
-              ? `Одноразово: ${new Date(campaign.scheduled_at).toLocaleString("ru-RU")}`
-              : `Каждые ${campaign.interval_minutes} мин`}
-            {" · "}
-            {campaign.target_chats.length} чат(ов)
-            {campaign.tag_random_users && " · теги случайных участников"}
-          </p>
-        </div>
-        {campaign.photo_url && (
-          <img
-            src={campaign.photo_url}
-            alt=""
-            className="h-14 w-14 rounded-lg object-cover border border-slate-700 shrink-0"
-          />
-        )}
-      </div>
-
-      {error && <p className="text-red-400 text-xs">{error}</p>}
-
-      <div className="flex gap-2 pt-1 flex-wrap">
-        <Button variant="secondary" onClick={() => setEditing(true)}>
-          Изменить
-        </Button>
-        {campaign.status !== "finished" && (
-          <Button variant="secondary" onClick={handleToggleStatus}>
-            {campaign.status === "active" ? "Пауза" : "Запустить"}
-          </Button>
-        )}
-        <Button variant="secondary" onClick={() => setShowLogs(true)}>
-          Логи
-        </Button>
-        <Button variant="danger" onClick={handleDelete}>
-          Удалить
-        </Button>
-      </div>
-
-      {showLogs && (
-        <CampaignLogsModal
-          accountId={accountId}
-          campaignId={campaign.id}
-          onClose={() => setShowLogs(false)}
-        />
-      )}
-    </Card>
-  );
-}
-
-export default function BroadcastPage({ accountId }) {
-  const [campaigns, setCampaigns] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [error, setError] = useState("");
-  const [tagFeature, setTagFeature] = useState(null);
-
-  useEffect(() => {
-    api.getTagFeatureStatus().then(setTagFeature).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (accountId) {
-      api
-        .listCampaigns(accountId)
-        .then(setCampaigns)
-        .catch((err) => setError(err.message));
-    }
-  }, [accountId]);
-
-  async function handleCreate(form) {
-    const campaign = await api.createCampaign(accountId, formToPayload(form));
-    setCampaigns((prev) => [...prev, campaign]);
-    setShowForm(false);
-  }
-
-  function handleChanged(updated, deletedId) {
-    if (deletedId) {
-      setCampaigns((prev) => prev.filter((c) => c.id !== deletedId));
-    } else {
-      setCampaigns((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    }
-  }
-
-  if (!accountId) {
-    return <p className="p-4 text-slate-400">Сначала подключите аккаунт на вкладке «Аккаунты».</p>;
-  }
-
-  return (
-    <div className="p-4 space-y-4">
-      <PageHeader
-        icon="📣"
+    <div className="space-y-4 p-4">
+      <PageTitle
         title="Рассылки"
-        action={!showForm && <Button onClick={() => setShowForm(true)}>+ Кампания</Button>}
+        subtitle="По вашим чатам и каналам, с паузами против блокировок"
+        action={
+          campaigns?.length > 0 && (
+            <Button size="sm" icon={atLimit ? Crown : Plus} onClick={openNew}>
+              Рассылка
+            </Button>
+          )
+        }
       />
+      <ErrorNote>{error}</ErrorNote>
 
-      {showForm && (
-        <Card>
-          <CampaignForm
-            initial={emptyForm}
-            submitLabel="Создать"
-            onSubmit={handleCreate}
-            onCancel={() => setShowForm(false)}
-            tagFeature={tagFeature}
-            onTagFeatureChanged={setTagFeature}
-          />
-        </Card>
+      {campaigns === null ? (
+        <div className="space-y-3">
+          <Skeleton className="h-32" />
+          <Skeleton className="h-32" />
+        </div>
+      ) : campaigns.length === 0 ? (
+        <EmptyState
+          icon={Send}
+          title="Запустите первую рассылку"
+          text="Сообщение с фото и форматированием — в ваши чаты по расписанию."
+          action={
+            <Button icon={Plus} onClick={openNew}>
+              Создать рассылку
+            </Button>
+          }
+        />
+      ) : (
+        <div className="space-y-3">
+          <AnimatePresence initial={false}>
+            {campaigns.map((c) => (
+              <CampaignCard
+                key={c.id}
+                campaign={c}
+                onOpen={(campaign) => setSheet({ open: true, campaign })}
+                onToggle={toggle}
+                onLogs={(campaign) => setLogs({ open: true, campaign })}
+              />
+            ))}
+          </AnimatePresence>
+          {limit != null && (
+            <p className="px-1 text-[13px] text-faint">
+              {campaigns.length} из {limit} рассылок на бесплатном тарифе.{" "}
+              <button
+                type="button"
+                className="font-semibold text-sky"
+                onClick={() => openPaywall()}
+              >
+                Безлимит в Pro
+              </button>
+            </p>
+          )}
+        </div>
       )}
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
-
-      <div className="space-y-3">
-        {campaigns.map((c) => (
-          <CampaignCard
-            key={c.id}
-            campaign={c}
-            accountId={accountId}
-            onChanged={handleChanged}
-            tagFeature={tagFeature}
-            onTagFeatureChanged={setTagFeature}
-          />
-        ))}
-        {campaigns.length === 0 && !showForm && (
-          <p className="text-sm text-slate-500">Кампаний пока нет — создайте первую.</p>
-        )}
-      </div>
+      <CampaignSheet
+        open={sheet.open}
+        campaign={sheet.campaign}
+        onClose={() => setSheet({ open: false, campaign: null })}
+        onSave={save}
+        onDelete={remove}
+      />
+      <CampaignLogsSheet
+        open={logs.open}
+        campaign={logs.campaign}
+        accountId={accountId}
+        onClose={() => setLogs((l) => ({ ...l, open: false }))}
+      />
     </div>
   );
 }

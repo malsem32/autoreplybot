@@ -1,3 +1,4 @@
+import asyncio
 import re
 
 from fastapi import HTTPException, status
@@ -80,7 +81,7 @@ def to_http_error(exc: BaseException) -> HTTPException:
     if rpc_id is not None:
         message = _MESSAGES.get(rpc_id, f"Ошибка Telegram: {rpc_id}")
         return HTTPException(status.HTTP_400_BAD_REQUEST, message)
-    if isinstance(exc, (ConnectionError, OSError, TimeoutError)):
+    if isinstance(exc, (ConnectionError, OSError, TimeoutError, asyncio.TimeoutError)):
         return HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
             "Не удалось подключиться к серверам Telegram. Попробуйте ещё раз",

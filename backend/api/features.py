@@ -31,6 +31,7 @@ async def get_status(
         max_photos=pro.max_photos(user),
         free_max_rules=pro.FREE_MAX_RULES_PER_ACCOUNT,
         free_max_campaigns=pro.FREE_MAX_CAMPAIGNS_PER_ACCOUNT,
+        bot_username=settings.bot_username,
     )
 
 

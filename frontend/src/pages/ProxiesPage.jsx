@@ -1,44 +1,46 @@
+import { AnimatePresence, motion } from "framer-motion";
+import { Globe, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../api/client.js";
-import Badge from "../components/ui/Badge.jsx";
+import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
-import Card from "../components/ui/Card.jsx";
-import { Input, Label, Select } from "../components/ui/Input.jsx";
-import PageHeader from "../components/ui/PageHeader.jsx";
+import { EmptyState, ErrorNote, Pill, Skeleton } from "../components/ui/Feedback.jsx";
+import { Field, Input } from "../components/ui/Input.jsx";
+import Segmented from "../components/ui/Segmented.jsx";
+import Sheet from "../components/ui/Sheet.jsx";
+import Switch from "../components/ui/Switch.jsx";
+import useBackButton from "../hooks/useBackButton.js";
+import { confirmDialog } from "../lib/telegram.js";
+import { useApp } from "../state/AppContext.jsx";
 
-const emptyForm = {
-  protocol: "socks5",
-  host: "",
-  port: "",
-  username: "",
-  password: "",
+const emptyForm = { protocol: "socks5", host: "", port: "", username: "", password: "" };
+
+const LIVENESS = {
+  alive: { tone: "go", label: "отвечает" },
+  dead: { tone: "danger", label: "не отвечает" },
 };
 
-function statusColor(status) {
-  if (status === "alive") return "text-emerald-400";
-  if (status === "dead") return "text-red-400";
-  return "text-slate-500";
-}
-
-function statusLabel(status) {
-  if (status === "alive") return "Живой";
-  if (status === "dead") return "Мёртвый";
-  return "Не проверялся";
-}
-
-function ProxyForm({ onSubmit, onCancel }) {
+function ProxySheet({ open, onClose, onCreate }) {
   const [form, setForm] = useState(emptyForm);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  useEffect(() => {
+    if (open) {
+      setForm(emptyForm);
+      setError("");
+    }
+  }, [open]);
+
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+
+  async function save() {
     setError("");
     setSaving(true);
     try {
-      await onSubmit({
+      await onCreate({
         protocol: form.protocol,
-        host: form.host,
+        host: form.host.trim(),
         port: Number(form.port),
         username: form.username || null,
         password: form.password || null,
@@ -51,212 +53,210 @@ function ProxyForm({ onSubmit, onCancel }) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-3">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Протокол</Label>
-          <Select
-            value={form.protocol}
-            onChange={(e) => setForm({ ...form, protocol: e.target.value })}
-          >
-            <option value="socks5">SOCKS5</option>
-            <option value="http">HTTP</option>
-          </Select>
-        </div>
-        <div>
-          <Label>Порт</Label>
-          <Input
-            type="number"
-            value={form.port}
-            onChange={(e) => setForm({ ...form, port: e.target.value })}
-            required
-          />
-        </div>
-      </div>
-      <div>
-        <Label>Хост</Label>
-        <Input
-          placeholder="pool.proxy.market"
-          value={form.host}
-          onChange={(e) => setForm({ ...form, host: e.target.value })}
-          required
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title="Новый прокси"
+      footer={
+        <Button
+          className="w-full"
+          loading={saving}
+          disabled={!form.host || !form.port}
+          onClick={save}
+        >
+          Добавить прокси
+        </Button>
+      }
+    >
+      <div className="space-y-4 pt-1">
+        <Segmented
+          value={form.protocol}
+          onChange={(protocol) => setForm({ ...form, protocol })}
+          options={[
+            { value: "socks5", label: "SOCKS5" },
+            { value: "http", label: "HTTP" },
+          ]}
         />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>Логин (необязательно)</Label>
-          <Input
-            value={form.username}
-            onChange={(e) => setForm({ ...form, username: e.target.value })}
-          />
+        <div className="grid grid-cols-[1fr_7rem] gap-3">
+          <Field label="Хост" htmlFor="px-host">
+            <Input
+              id="px-host"
+              value={form.host}
+              onChange={set("host")}
+              placeholder="proxy.example.com"
+              autoCapitalize="off"
+            />
+          </Field>
+          <Field label="Порт" htmlFor="px-port">
+            <Input
+              id="px-port"
+              type="number"
+              inputMode="numeric"
+              value={form.port}
+              onChange={set("port")}
+            />
+          </Field>
         </div>
-        <div>
-          <Label>Пароль (необязательно)</Label>
-          <Input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-          />
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Логин" hint="если нужен" htmlFor="px-user">
+            <Input
+              id="px-user"
+              value={form.username}
+              onChange={set("username")}
+              autoCapitalize="off"
+            />
+          </Field>
+          <Field label="Пароль" htmlFor="px-pass">
+            <Input id="px-pass" type="password" value={form.password} onChange={set("password")} />
+          </Field>
         </div>
+        <ErrorNote>{error}</ErrorNote>
       </div>
-
-      {error && <p className="text-red-400 text-sm">{error}</p>}
-
-      <div className="flex gap-2">
-        <Button type="submit" disabled={saving} className="flex-1">
-          {saving ? "Сохранение…" : "Добавить"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={onCancel}>
-          Отмена
-        </Button>
-      </div>
-    </form>
-  );
-}
-
-function ProxyCard({ proxy, onChanged, onDeleted }) {
-  const [error, setError] = useState("");
-
-  async function handleToggleActive() {
-    setError("");
-    try {
-      const updated = await api.updateProxy(proxy.id, { is_active: !proxy.is_active });
-      onChanged(updated);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function handleDelete() {
-    setError("");
-    try {
-      await api.deleteProxy(proxy.id);
-      onDeleted(proxy.id);
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  return (
-    <Card className="space-y-2">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <p className="font-medium font-mono text-sm">
-            {proxy.protocol}://{proxy.host}:{proxy.port}
-          </p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {proxy.username ? `логин: ${proxy.username}` : "без авторизации"}
-          </p>
-        </div>
-        <Badge status={proxy.is_active ? "active" : "paused"} />
-      </div>
-
-      <div className="flex items-center gap-2 text-xs">
-        <span className={`font-medium ${statusColor(proxy.last_status)}`}>
-          ● {statusLabel(proxy.last_status)}
-        </span>
-        {proxy.last_latency_ms != null && (
-          <span className="text-slate-500">{proxy.last_latency_ms} мс</span>
-        )}
-        {proxy.last_checked_at && (
-          <span className="text-slate-600">
-            {new Date(proxy.last_checked_at).toLocaleString("ru-RU")}
-          </span>
-        )}
-      </div>
-
-      {error && <p className="text-red-400 text-xs">{error}</p>}
-
-      <div className="flex gap-2 pt-1">
-        <Button variant="secondary" onClick={handleToggleActive}>
-          {proxy.is_active ? "Отключить" : "Включить"}
-        </Button>
-        <Button variant="danger" onClick={handleDelete}>
-          Удалить
-        </Button>
-      </div>
-    </Card>
+    </Sheet>
   );
 }
 
 export default function ProxiesPage() {
-  const [proxies, setProxies] = useState([]);
-  const [showForm, setShowForm] = useState(false);
-  const [checking, setChecking] = useState(false);
+  useBackButton("/profile");
+  const { toast } = useApp();
+  const [proxies, setProxies] = useState(null);
   const [error, setError] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     api
       .listProxies()
       .then(setProxies)
-      .catch((err) => setError(err.message));
+      .catch((err) => {
+        setError(err.message);
+        setProxies([]);
+      });
   }, []);
 
-  async function handleCreate(payload) {
+  const replace = (p) => setProxies((prev) => prev.map((x) => (x.id === p.id ? p : x)));
+
+  async function create(payload) {
     const proxy = await api.createProxy(payload);
     setProxies((prev) => [...prev, proxy]);
-    setShowForm(false);
+    setAdding(false);
+    toast("Прокси добавлен");
   }
 
-  function handleChanged(updated) {
-    setProxies((prev) => prev.map((p) => (p.id === updated.id ? updated : p)));
+  async function toggle(proxy, isActive) {
+    try {
+      replace(await api.updateProxy(proxy.id, { is_active: isActive }));
+    } catch (err) {
+      toast(err.message, "danger");
+    }
   }
 
-  function handleDeleted(id) {
-    setProxies((prev) => prev.filter((p) => p.id !== id));
+  async function remove(proxy) {
+    if (!(await confirmDialog(`Удалить прокси ${proxy.host}:${proxy.port}?`))) return;
+    try {
+      await api.deleteProxy(proxy.id);
+      setProxies((prev) => prev.filter((p) => p.id !== proxy.id));
+    } catch (err) {
+      toast(err.message, "danger");
+    }
   }
 
-  async function handleCheckAll() {
-    setError("");
+  async function checkAll() {
     setChecking(true);
     try {
-      const updated = await api.checkAllProxies();
-      setProxies(updated);
+      setProxies(await api.checkAllProxies());
+      toast("Проверка завершена");
     } catch (err) {
-      setError(err.message);
+      toast(err.message, "danger");
     } finally {
       setChecking(false);
     }
   }
 
   return (
-    <div className="p-4 space-y-4">
-      <PageHeader
-        icon="🌐"
+    <div className="space-y-4 p-4">
+      <PageTitle
         title="Прокси"
+        subtitle="Через них уходят запросы кода входа — Telegram реже задерживает SMS"
         action={
-          <div className="flex gap-2">
-            {proxies.length > 0 && (
-              <Button variant="secondary" onClick={handleCheckAll} disabled={checking}>
-                {checking ? "Проверка…" : "Проверить все"}
-              </Button>
-            )}
-            {!showForm && <Button onClick={() => setShowForm(true)}>+ Прокси</Button>}
-          </div>
+          proxies?.length > 0 && (
+            <Button size="sm" icon={Plus} onClick={() => setAdding(true)}>
+              Прокси
+            </Button>
+          )
         }
       />
-
-      <p className="text-xs text-slate-500">
-        Используются только для запроса кода при подключении аккаунта — снижает риск, что
-        Telegram сочтёт IP сервера подозрительным и заблокирует отправку SMS.
-      </p>
-
-      {showForm && (
-        <Card>
-          <ProxyForm onSubmit={handleCreate} onCancel={() => setShowForm(false)} />
-        </Card>
+      <ErrorNote>{error}</ErrorNote>
+      {proxies === null ? (
+        <Skeleton className="h-24" />
+      ) : proxies.length === 0 ? (
+        <EmptyState
+          icon={Globe}
+          title="Прокси не добавлены"
+          text="Без прокси коды входа запрашиваются напрямую с сервера — это тоже работает."
+          action={
+            <Button icon={Plus} onClick={() => setAdding(true)}>
+              Добавить прокси
+            </Button>
+          }
+        />
+      ) : (
+        <>
+          <Button
+            variant="secondary"
+            className="w-full"
+            icon={RefreshCw}
+            loading={checking}
+            onClick={checkAll}
+          >
+            Проверить все
+          </Button>
+          <div className="space-y-2.5">
+            <AnimatePresence initial={false}>
+              {proxies.map((p) => {
+                const live = LIVENESS[p.last_status];
+                return (
+                  <motion.div
+                    key={p.id}
+                    layout
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0, x: -40 }}
+                    className="flex items-center gap-3 rounded-[18px] bg-surface p-4"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-[15px] font-semibold">
+                        {p.host}:{p.port}
+                      </p>
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                        <Pill tone="sky">{p.protocol.toUpperCase()}</Pill>
+                        <Pill tone={live?.tone || "muted"} dot>
+                          {live?.label || "не проверялся"}
+                          {p.last_latency_ms != null && ` · ${p.last_latency_ms} мс`}
+                        </Pill>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={p.is_active}
+                      onChange={(v) => toggle(p, v)}
+                      label="Прокси включён"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => remove(p)}
+                      className="grid h-9 w-9 place-items-center rounded-lg text-faint hover:text-danger"
+                      aria-label="Удалить прокси"
+                    >
+                      <Trash2 className="h-[18px] w-[18px]" />
+                    </button>
+                  </motion.div>
+                );
+              })}
+            </AnimatePresence>
+          </div>
+        </>
       )}
-
-      {error && <p className="text-red-400 text-sm">{error}</p>}
-
-      <div className="space-y-3">
-        {proxies.map((p) => (
-          <ProxyCard key={p.id} proxy={p} onChanged={handleChanged} onDeleted={handleDeleted} />
-        ))}
-        {proxies.length === 0 && !showForm && (
-          <p className="text-sm text-slate-500">Прокси пока не добавлены.</p>
-        )}
-      </div>
+      <ProxySheet open={adding} onClose={() => setAdding(false)} onCreate={create} />
     </div>
   );
 }

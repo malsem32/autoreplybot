@@ -51,7 +51,7 @@ def test_flood_wait_maps_to_429_with_wait_time():
 def test_unknown_error_id_is_extracted_from_value():
     from pyrogram.errors import BadRequest
 
-    exc = BadRequest(value="[400 SOME_NEW_ERROR]", is_unknown=True)
+    exc = BadRequest(value="[400 SOME_NEW_ERROR]")
     assert error_id(exc) == "SOME_NEW_ERROR"
     assert "SOME_NEW_ERROR" in to_http_error(exc).detail
 

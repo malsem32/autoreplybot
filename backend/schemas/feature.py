@@ -28,6 +28,7 @@ class ProStatusOut(BaseModel):
     max_photos: int
     free_max_rules: int
     free_max_campaigns: int
+    bot_username: str  # for the "Отправлено через @…" signature preview
 
 
 class ProInvoiceOut(BaseModel):

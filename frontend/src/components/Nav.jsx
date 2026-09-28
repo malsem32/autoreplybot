@@ -1,30 +1,60 @@
-import { NavLink } from "react-router-dom";
+import { motion } from "framer-motion";
+import { Gauge, MessageCircleReply, Send, UserRound } from "lucide-react";
+import { NavLink, useLocation } from "react-router-dom";
+import { haptic } from "../lib/telegram.js";
 
-const linkClass = ({ isActive }) =>
-  `flex-1 py-3 text-center text-sm ${isActive ? "text-blue-400 font-medium" : "text-slate-400"}`;
+export const TABS = [
+  { to: "/", label: "Главная", icon: Gauge },
+  { to: "/autoresponder", label: "Автоответ", icon: MessageCircleReply },
+  { to: "/broadcast", label: "Рассылки", icon: Send },
+  { to: "/profile", label: "Профиль", icon: UserRound },
+];
 
-export default function Nav({ isAdmin }) {
+export function tabIndex(pathname) {
+  if (pathname.startsWith("/admin")) return 3;
+  const i = TABS.findIndex((t) => (t.to === "/" ? pathname === "/" : pathname.startsWith(t.to)));
+  return i === -1 ? 0 : i;
+}
+
+export default function Nav() {
+  const { pathname } = useLocation();
+  const current = tabIndex(pathname);
+
   return (
-    <nav className="fixed bottom-0 left-0 right-0 flex border-t border-slate-800 bg-slate-950">
-      <NavLink to="/" end className={linkClass}>
-        Аккаунты
-      </NavLink>
-      <NavLink to="/autoresponder" className={linkClass}>
-        Автоответ
-      </NavLink>
-      <NavLink to="/broadcast" className={linkClass}>
-        Рассылка
-      </NavLink>
-      {isAdmin && (
-        <NavLink to="/stats" className={linkClass}>
-          Статистика
-        </NavLink>
-      )}
-      {isAdmin && (
-        <NavLink to="/proxies" className={linkClass}>
-          Прокси
-        </NavLink>
-      )}
+    <nav
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg/85 backdrop-blur-xl"
+      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+    >
+      <div className="mx-auto flex max-w-lg">
+        {TABS.map((tab, i) => {
+          const active = i === current;
+          return (
+            <NavLink
+              key={tab.to}
+              to={tab.to}
+              end={tab.to === "/"}
+              onClick={() => !active && haptic.select()}
+              className={`relative flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[11px] font-semibold transition-colors ${
+                active ? "text-sky" : "text-faint"
+              }`}
+            >
+              {active && (
+                <motion.span
+                  layoutId="nav-pill"
+                  className="absolute top-1.5 h-8 w-14 rounded-full bg-sky/12"
+                  transition={{ type: "spring", stiffness: 500, damping: 38 }}
+                />
+              )}
+              <tab.icon
+                className="relative h-[22px] w-[22px]"
+                strokeWidth={active ? 2.3 : 1.9}
+                aria-hidden
+              />
+              <span className="relative">{tab.label}</span>
+            </NavLink>
+          );
+        })}
+      </div>
     </nav>
   );
 }
