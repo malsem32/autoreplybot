@@ -1,5 +1,5 @@
-import { motion } from "framer-motion";
-import { BarChart3, Copy, Crown, Gift, Globe, Share2, Star } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { BarChart3, ChevronDown, Copy, Crown, Gift, Globe, Share2, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
@@ -16,6 +16,7 @@ import {
 import Button from "../components/ui/Button.jsx";
 import { ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
 import { ListGroup, ListRow } from "../components/ui/List.jsx";
+import plural from "../lib/plural.js";
 import { copyText, haptic, shareLink } from "../lib/telegram.js";
 import { useApp } from "../state/AppContext.jsx";
 
@@ -23,6 +24,7 @@ function ProCard() {
   const { pro } = useApp();
   const { buy, trial, buying, error } = useBuyPro();
   const [plan, setPlan] = useState("year");
+  const [showFeatures, setShowFeatures] = useState(false);
 
   useEffect(() => {
     if (pro) setPlan(defaultPlan(pro));
@@ -30,6 +32,7 @@ function ProCard() {
 
   if (!pro) return <Skeleton className="h-64 !rounded-[22px]" />;
   const selected = pro.plans?.find((p) => p.id === plan);
+  const featureCount = pro.feature_groups.reduce((n, g) => n + g.items.length, 0);
 
   return (
     <section className="relative overflow-hidden rounded-[22px] bg-surface p-5">
@@ -53,9 +56,35 @@ function ProCard() {
             </p>
           </div>
         </div>
-        <div className="mt-5">
-          <ProFeatures groups={pro.feature_groups} />
-        </div>
+        <button
+          type="button"
+          onClick={() => setShowFeatures((v) => !v)}
+          aria-expanded={showFeatures}
+          className="mt-4 flex w-full items-center justify-between rounded-tile bg-raised/50 px-3.5 py-3 text-left text-[14px] font-semibold"
+        >
+          Что входит в Pro
+          <span className="flex items-center gap-1.5 text-[13px] font-medium text-muted">
+            {featureCount} {plural(featureCount, "функция", "функции", "функций")}
+            <ChevronDown
+              className={`h-4 w-4 transition-transform ${showFeatures ? "rotate-180" : ""}`}
+              aria-hidden
+            />
+          </span>
+        </button>
+        <AnimatePresence initial={false}>
+          {showFeatures && (
+            <motion.div
+              initial={{ height: 0, opacity: 0 }}
+              animate={{ height: "auto", opacity: 1 }}
+              exit={{ height: 0, opacity: 0 }}
+              className="overflow-hidden"
+            >
+              <div className="pt-4">
+                <ProFeatures groups={pro.feature_groups} />
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
         {!pro.is_admin && pro.plans?.length > 0 && (
           <div className="mt-6">
             <PlanPicker plans={pro.plans} value={plan} onChange={setPlan} />
@@ -63,10 +92,8 @@ function ProCard() {
         )}
         {!pro.is_admin && selected && (
           <Button variant="pro" className="mt-4 w-full" loading={buying} onClick={() => buy(plan)}>
+            {pro.has_access ? `Продлить за ${selected.stars}` : `Подключить за ${selected.stars}`}
             <Star className="h-4 w-4 fill-current" />
-            {pro.has_access
-              ? `Продлить на ${selected.title.toLowerCase()} — ${selected.stars} Stars`
-              : `Подключить за ${selected.stars} Stars`}
           </Button>
         )}
         {pro.trial_available && (

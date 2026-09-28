@@ -37,6 +37,15 @@
   color-scheme: light;
 }
 
+/* Safe areas: Telegram's values (set by lib/telegram.js) win over the
+   browser's env() so the layout clears the notch, the home indicator and,
+   in fullscreen, Telegram's floating close/menu buttons. */
+:root {
+  --inset-top: max(env(safe-area-inset-top, 0px), var(--tg-inset-top, 0px));
+  --inset-bottom: max(env(safe-area-inset-bottom, 0px), var(--tg-inset-bottom, 0px));
+  --app-height: var(--tg-viewport-stable-height, 100dvh);
+}
+
 @layer base {
   html,
   body {
@@ -46,7 +55,7 @@
   }
   body {
     min-height: 100vh;
-    min-height: var(--tg-viewport-stable-height, 100vh);
+    min-height: var(--app-height);
   }
   :focus-visible {
     @apply outline-none ring-2 ring-sky/70 ring-offset-2 ring-offset-bg;

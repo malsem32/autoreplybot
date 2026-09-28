@@ -5,7 +5,10 @@ import { useApp } from "../state/AppContext.jsx";
 export default function Toasts() {
   const { toasts } = useApp();
   return (
-    <div className="pointer-events-none fixed inset-x-0 top-3 z-[60] flex flex-col items-center gap-2 px-4">
+    <div
+      className="pointer-events-none fixed inset-x-0 z-[60] flex flex-col items-center gap-2 px-4"
+      style={{ top: "calc(var(--inset-top) + 12px)" }}
+    >
       <AnimatePresence>
         {toasts.map((t) => (
           <motion.div

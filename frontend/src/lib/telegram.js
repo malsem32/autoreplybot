@@ -34,12 +34,50 @@ export function applyTheme() {
   safe(() => WebApp.setBottomBarColor?.(THEME_COLORS[scheme].bg));
 }
 
+const MOBILE_PLATFORMS = ["ios", "android", "android_x"];
+
+function px(value) {
+  return `${Math.max(0, Number(value) || 0)}px`;
+}
+
+/** Mirrors Telegram's safe areas into CSS variables used by the layout
+ * (`--inset-top` / `--inset-bottom` in index.css). In fullscreen the app
+ * draws under the status bar and Telegram's own close/menu buttons, so the
+ * top inset is the device safe area plus Telegram's content safe area. */
+function syncInsets() {
+  const root = document.documentElement;
+  const device = safe(() => WebApp.safeAreaInset) || {};
+  const content = safe(() => WebApp.contentSafeAreaInset) || {};
+  const fullscreen = Boolean(safe(() => WebApp.isFullscreen));
+  root.dataset.fullscreen = fullscreen ? "true" : "false";
+  root.style.setProperty(
+    "--tg-inset-top",
+    fullscreen ? px((device.top || 0) + (content.top || 0)) : "0px",
+  );
+  root.style.setProperty("--tg-inset-bottom", px((device.bottom || 0) + (content.bottom || 0)));
+}
+
 export function initTelegram() {
   safe(() => WebApp.ready());
   safe(() => WebApp.expand());
   safe(() => WebApp.disableVerticalSwipes?.());
+  // Bot API 8.0+: real fullscreen on phones; desktop and web stay windowed.
+  const mobile = MOBILE_PLATFORMS.includes(safe(() => WebApp.platform));
+  if (mobile && safe(() => WebApp.isVersionAtLeast("8.0"))) {
+    safe(() => WebApp.requestFullscreen());
+    safe(() => WebApp.lockOrientation?.());
+  }
   applyTheme();
+  syncInsets();
   safe(() => WebApp.onEvent("themeChanged", applyTheme));
+  for (const event of [
+    "safeAreaChanged",
+    "contentSafeAreaChanged",
+    "fullscreenChanged",
+    "viewportChanged",
+  ]) {
+    safe(() => WebApp.onEvent(event, syncInsets));
+  }
 }
 
 /** Opens a Stars invoice; resolves with "paid" | "cancelled" | "failed" | "pending". */

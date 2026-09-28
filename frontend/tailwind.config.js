@@ -23,6 +23,10 @@ export default {
         display: ["Unbounded", "system-ui", "sans-serif"],
         sans: ["Onest", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
       },
+      // "/12" is used for soft tinted backgrounds; not in Tailwind's default scale.
+      opacity: {
+        12: "0.12",
+      },
       borderRadius: {
         tile: "14px",
         sheet: "26px",

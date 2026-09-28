@@ -30,7 +30,7 @@ import RichTextEditor from "../components/composer/RichTextEditor.jsx";
 import NeedAccount from "../components/NeedAccount.jsx";
 import PageTitle from "../components/PageTitle.jsx";
 import Button from "../components/ui/Button.jsx";
-import { EmptyState, ErrorNote, Pill, Skeleton } from "../components/ui/Feedback.jsx";
+import { EmptyState, ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
 import { Field, Input, Label } from "../components/ui/Input.jsx";
 import { ListGroup } from "../components/ui/List.jsx";
 import Segmented from "../components/ui/Segmented.jsx";
@@ -370,6 +370,7 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
 function CampaignCard({ campaign, onOpen, onToggle, onLogs, onStats }) {
   const status = STATUS[campaign.status] || STATUS.finished;
   const cover = campaign.photo_urls[0];
+  const running = campaign.status === "active";
   return (
     <motion.article
       layout
@@ -378,72 +379,87 @@ function CampaignCard({ campaign, onOpen, onToggle, onLogs, onStats }) {
       exit={{ opacity: 0, x: -40 }}
       className="overflow-hidden rounded-[18px] bg-surface"
     >
-      <button
-        type="button"
-        onClick={() => onOpen(campaign)}
-        className="flex w-full gap-3 p-4 text-left"
-      >
-        {cover && (
-          <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl">
-            <img src={cover} alt="" className="h-full w-full object-cover" />
-            {campaign.photo_urls.length > 1 && (
-              <span className="absolute bottom-1 right-1 rounded-md bg-black/60 px-1.5 text-[10px] font-bold text-white">
-                +{campaign.photo_urls.length - 1}
-              </span>
-            )}
-          </div>
-        )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
+      <div className="flex items-start gap-3 p-4 pb-3">
+        <button
+          type="button"
+          onClick={() => onOpen(campaign)}
+          className="flex min-w-0 flex-1 gap-3 text-left"
+        >
+          {cover && (
+            <div className="relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-raised">
+              <img src={cover} alt="" className="h-full w-full object-cover" />
+              {campaign.photo_urls.length > 1 && (
+                <span className="absolute bottom-1 right-1 rounded-md bg-black/60 px-1.5 text-[10px] font-bold text-white">
+                  +{campaign.photo_urls.length - 1}
+                </span>
+              )}
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
             <h3 className="truncate text-[16px] font-semibold">{campaign.title}</h3>
-            <Pill tone={status.tone} dot>
-              {status.label}
-            </Pill>
+            <p className="mt-0.5 line-clamp-2 text-[14px] leading-snug text-muted">
+              {campaign.text_template.replace(/<[^>]+>/g, "")}
+            </p>
           </div>
-          <p className="mt-1 line-clamp-2 text-[14px] leading-snug text-muted">
-            {campaign.text_template.replace(/<[^>]+>/g, "")}
-          </p>
-          <p className="mt-1.5 text-xs text-faint">
-            {campaign.schedule_type === "once"
-              ? `Один раз, ${new Date(campaign.scheduled_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
-              : `Каждые ${intervalLabel(campaign.interval_minutes)}`}
-            {` · ${campaign.target_chats.length} ${plural(campaign.target_chats.length, "чат", "чата", "чатов")}`}
-            {campaign.disabled_targets.length > 0 &&
-              ` · ${campaign.disabled_targets.length} отключено`}
-          </p>
-        </div>
-      </button>
-      <div className="flex border-t border-line/50">
+        </button>
         {campaign.status !== "finished" && (
-          <button
+          <motion.button
             type="button"
+            whileTap={{ scale: 0.9 }}
             onClick={() => onToggle(campaign)}
-            className="flex flex-1 items-center justify-center gap-2 py-3 text-sm font-semibold text-sky active:bg-raised/60"
+            aria-label={running ? "Поставить на паузу" : "Запустить"}
+            className={`grid h-11 w-11 shrink-0 place-items-center rounded-full transition-colors ${
+              running
+                ? "bg-sky/12 text-sky ring-1 ring-sky/30"
+                : "bg-sky text-onsky shadow-[0_8px_20px_-10px_rgb(var(--sky))]"
+            }`}
           >
-            {campaign.status === "active" ? (
-              <Pause className="h-4 w-4" />
+            {running ? (
+              <Pause className="h-5 w-5" fill="currentColor" strokeWidth={0} />
             ) : (
-              <Play className="h-4 w-4" />
+              <Play className="ml-0.5 h-5 w-5" fill="currentColor" strokeWidth={0} />
             )}
-            {campaign.status === "active" ? "Пауза" : "Запустить"}
-          </button>
+          </motion.button>
         )}
-        <button
-          type="button"
-          onClick={() => onLogs(campaign)}
-          className="flex flex-1 items-center justify-center gap-2 border-l border-line/50 py-3 text-sm font-semibold text-muted active:bg-raised/60 first:border-l-0"
+      </div>
+      <p className="flex items-center gap-1.5 px-4 text-xs text-faint">
+        <span
+          className={`inline-flex items-center gap-1 font-semibold ${STATUS_TEXT[status.tone]}`}
         >
-          <History className="h-4 w-4" /> Журнал
-        </button>
-        <button
-          type="button"
-          onClick={() => onStats(campaign)}
-          className="flex flex-1 items-center justify-center gap-2 border-l border-line/50 py-3 text-sm font-semibold text-muted active:bg-raised/60"
-        >
-          <BarChart3 className="h-4 w-4" /> Статистика
-        </button>
+          <span className="h-1.5 w-1.5 rounded-full bg-current" aria-hidden />
+          {status.label}
+        </span>
+        <span aria-hidden>·</span>
+        <span className="min-w-0 truncate">
+          {campaign.schedule_type === "once"
+            ? `Один раз, ${new Date(campaign.scheduled_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`
+            : `Каждые ${intervalLabel(campaign.interval_minutes)}`}
+          {` · ${campaign.target_chats.length} ${plural(campaign.target_chats.length, "чат", "чата", "чатов")}`}
+          {campaign.disabled_targets.length > 0 &&
+            ` · ${campaign.disabled_targets.length} отключено`}
+        </span>
+      </p>
+      <div className="flex items-center gap-2 px-4 pb-3.5 pt-3">
+        <CardChip icon={History} label="Журнал" onClick={() => onLogs(campaign)} />
+        <CardChip icon={BarChart3} label="Статистика" onClick={() => onStats(campaign)} />
       </div>
     </motion.article>
+  );
+}
+
+const STATUS_TEXT = { go: "text-go", warn: "text-warn", muted: "text-muted", sky: "text-sky" };
+
+function CardChip({ icon: Icon, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-raised/70 px-3 text-[13px] font-semibold text-muted transition-colors active:bg-raised"
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      {label}
+    </button>
   );
 }
 

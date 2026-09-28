@@ -113,6 +113,19 @@ function LeadSheet({ lead, open, onClose, onSave }) {
   );
 }
 
+function QuickChip({ icon: Icon, label, tone, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`inline-flex h-8 min-w-8 shrink-0 items-center justify-center gap-1.5 rounded-full px-3 text-[13px] max-[359px]:px-2 font-semibold ${tone}`}
+    >
+      <Icon className="h-3.5 w-3.5" aria-hidden />
+      <span className="max-[359px]:sr-only">{label}</span>
+    </button>
+  );
+}
+
 function LeadCard({ lead, onOpen, onQuick }) {
   const status = STATUS[lead.status] || STATUS.new;
   return (
@@ -126,7 +139,7 @@ function LeadCard({ lead, onOpen, onQuick }) {
       <button
         type="button"
         onClick={() => onOpen(lead)}
-        className="flex w-full gap-3 p-4 text-left"
+        className="flex w-full gap-3 px-4 pb-2.5 pt-4 text-left"
       >
         <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gradient-to-br from-sky to-[#1E6FD9] font-display text-base font-semibold text-white">
           {initial(lead.name)}
@@ -139,40 +152,36 @@ function LeadCard({ lead, onOpen, onQuick }) {
           <span className="mt-0.5 line-clamp-2 block text-[14px] leading-snug text-muted">
             {lead.last_text || "—"}
           </span>
-          <span className="mt-2 flex items-center gap-2">
-            <Pill tone={status.tone} dot>
-              {status.label}
-            </Pill>
-            {lead.messages_count > 1 && (
-              <span className="text-xs text-faint">
-                {lead.messages_count}{" "}
-                {plural(lead.messages_count, "сообщение", "сообщения", "сообщений")}
-              </span>
-            )}
-            {lead.note && <span className="truncate text-xs text-faint">· {lead.note}</span>}
-          </span>
+          {lead.note && (
+            <span className="mt-1 block truncate text-xs text-faint">📝 {lead.note}</span>
+          )}
         </span>
       </button>
-      {lead.status !== "done" && (
-        <div className="flex border-t border-line/50">
-          {lead.status === "new" && (
-            <button
-              type="button"
-              onClick={() => onQuick(lead, "in_work")}
-              className="flex flex-1 items-center justify-center gap-2 py-2.5 text-sm font-semibold text-warn active:bg-raised/60"
-            >
-              <Wrench className="h-4 w-4" /> В работу
-            </button>
-          )}
-          <button
-            type="button"
+      <div className="flex items-center gap-2 pb-3.5 pl-[72px] pr-4">
+        <Pill tone={status.tone} dot>
+          {status.label}
+        </Pill>
+        {lead.messages_count > 1 && (
+          <span className="truncate text-xs text-faint">×{lead.messages_count}</span>
+        )}
+        <span className="flex-1" />
+        {lead.status === "new" && (
+          <QuickChip
+            icon={Wrench}
+            label="В работу"
+            tone="bg-warn/12 text-warn active:bg-warn/20"
+            onClick={() => onQuick(lead, "in_work")}
+          />
+        )}
+        {lead.status !== "done" && (
+          <QuickChip
+            icon={CheckCircle2}
+            label="Готово"
+            tone="bg-go/12 text-go active:bg-go/20"
             onClick={() => onQuick(lead, "done")}
-            className="flex flex-1 items-center justify-center gap-2 border-l border-line/50 py-2.5 text-sm font-semibold text-go first:border-l-0 active:bg-raised/60"
-          >
-            <CheckCircle2 className="h-4 w-4" /> Готово
-          </button>
-        </div>
-      )}
+          />
+        )}
+      </div>
     </motion.article>
   );
 }
@@ -217,7 +226,7 @@ export default function LeadsPage() {
     load();
   }, [load]);
 
-  if (!activeAccount) return <NeedAccount title="Обращения" />;
+  if (!activeAccount) return <NeedAccount title="Клиенты" />;
 
   async function update(lead, patch) {
     try {
@@ -248,7 +257,7 @@ export default function LeadsPage() {
   return (
     <div className="space-y-4 p-4">
       <PageTitle
-        title="Обращения"
+        title="Клиенты"
         subtitle="Все, кто написал вам в личку"
         action={
           hasPro &&

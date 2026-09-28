@@ -16,7 +16,7 @@ import { useApp } from "../state/AppContext.jsx";
 
 function Welcome({ onAdd }) {
   return (
-    <div className="flex min-h-[78vh] flex-col items-center justify-center px-2 text-center">
+    <div className="flex min-h-[calc(var(--app-height)-var(--inset-top)-var(--inset-bottom)-110px)] flex-col items-center justify-center px-2 text-center">
       <motion.div
         initial={{ scale: 0.85, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -204,7 +204,7 @@ export default function HomePage() {
         <ListRow
           icon={Inbox}
           iconClass="bg-warn/15 text-warn"
-          title="Обращения"
+          title="Клиенты"
           subtitle={
             !pro?.has_access
               ? "Мини-CRM всех, кто вам написал — в Pro"

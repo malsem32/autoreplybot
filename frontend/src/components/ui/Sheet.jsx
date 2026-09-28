@@ -32,7 +32,8 @@ export default function Sheet({ open, onClose, title, children, footer }) {
             onClick={onClose}
           />
           <motion.div
-            className="relative flex max-h-[92vh] w-full max-w-lg flex-col rounded-t-sheet bg-surface shadow-2xl"
+            className="relative flex w-full max-w-lg flex-col rounded-t-sheet bg-surface shadow-2xl"
+            style={{ maxHeight: "calc(100% - var(--inset-top) - 12px)" }}
             initial={{ y: "100%" }}
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
@@ -63,9 +64,17 @@ export default function Sheet({ open, onClose, title, children, footer }) {
                 </button>
               </div>
             </div>
-            <div className="overflow-y-auto overscroll-contain px-5 pb-5">{children}</div>
+            <div
+              className="overflow-y-auto overscroll-contain px-5"
+              style={{ paddingBottom: footer ? "1.25rem" : "calc(1.25rem + var(--inset-bottom))" }}
+            >
+              {children}
+            </div>
             {footer && (
-              <div className="border-t border-line/60 px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-3">
+              <div
+                className="border-t border-line/60 px-5 pt-3"
+                style={{ paddingBottom: "calc(0.75rem + var(--inset-bottom))" }}
+              >
                 {footer}
               </div>
             )}

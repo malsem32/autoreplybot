@@ -69,7 +69,21 @@ function AnimatedRoutes() {
 export default function App() {
   return (
     <AppProvider>
-      <div className="min-h-screen overflow-x-hidden pb-[calc(76px+env(safe-area-inset-bottom))]">
+      {/* Fullscreen: keeps scrolled content from showing through the status
+          bar and Telegram's floating buttons. Zero-height otherwise. */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed inset-x-0 top-0 z-30 bg-bg/85 backdrop-blur-xl"
+        style={{ height: "var(--inset-top)" }}
+      />
+      <div
+        className="overflow-x-hidden"
+        style={{
+          minHeight: "var(--app-height)",
+          paddingTop: "var(--inset-top)",
+          paddingBottom: "calc(76px + var(--inset-bottom))",
+        }}
+      >
         <AnimatedRoutes />
       </div>
       <Nav />

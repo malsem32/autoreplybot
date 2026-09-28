@@ -6,7 +6,7 @@ import { haptic } from "../lib/telegram.js";
 export const TABS = [
   { to: "/", label: "Главная", icon: Gauge },
   { to: "/autoresponder", label: "Автоответ", icon: MessageCircleReply },
-  { to: "/leads", label: "Обращения", icon: Inbox },
+  { to: "/leads", label: "Клиенты", icon: Inbox },
   { to: "/broadcast", label: "Рассылки", icon: Send },
   { to: "/profile", label: "Профиль", icon: UserRound },
 ];
@@ -23,8 +23,8 @@ export default function Nav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg/85 backdrop-blur-xl"
-      style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg/95 backdrop-blur-xl"
+      style={{ paddingBottom: "var(--inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-lg">
         {TABS.map((tab, i) => {
@@ -35,7 +35,7 @@ export default function Nav() {
               to={tab.to}
               end={tab.to === "/"}
               onClick={() => !active && haptic.select()}
-              className={`relative flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] font-semibold transition-colors ${
+              className={`relative flex flex-1 flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] font-semibold max-[359px]:text-[9.5px] transition-colors ${
                 active ? "text-sky" : "text-faint"
               }`}
             >
