@@ -8,6 +8,7 @@ import {
   MessageCircleReply,
   Plus,
   FlaskConical,
+  Sparkles,
   Trash2,
   UserPlus,
   UsersRound,
@@ -20,8 +21,10 @@ import MessagePreview from "../components/composer/MessagePreview.jsx";
 import PhotoPicker from "../components/composer/PhotoPicker.jsx";
 import { photoRefs, photosFromUrls } from "../components/composer/photos.js";
 import RichTextEditor from "../components/composer/RichTextEditor.jsx";
+import AiPanel from "../components/AiPanel.jsx";
 import NeedAccount from "../components/NeedAccount.jsx";
 import PageTitle from "../components/PageTitle.jsx";
+import SnippetsPanel from "../components/SnippetsPanel.jsx";
 import OptionRow from "../components/pro/OptionRow.jsx";
 import Button from "../components/ui/Button.jsx";
 import { EmptyState, ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
@@ -95,6 +98,7 @@ const emptyForm = () => ({
   skipActiveMinutes: 0,
   typingDelay: 0,
   notifyOwner: false,
+  aiReply: false,
 });
 
 function ruleToForm(rule) {
@@ -115,6 +119,7 @@ function ruleToForm(rule) {
     skipActiveMinutes: rule.skip_if_owner_active_minutes,
     typingDelay: rule.typing_delay_seconds,
     notifyOwner: rule.notify_owner,
+    aiReply: rule.ai_reply,
   };
 }
 
@@ -138,6 +143,7 @@ function formToPayload(form, hasPro) {
     skip_if_owner_active_minutes: hasPro ? form.skipActiveMinutes : 0,
     typing_delay_seconds: hasPro ? form.typingDelay : 0,
     notify_owner: hasPro && form.notifyOwner,
+    ai_reply: hasPro && form.aiReply,
   };
 }
 
@@ -396,6 +402,14 @@ function RuleSheet({ open, rule, onClose, onSave, onDelete }) {
             onChange={(notifyOwner) => set({ notifyOwner })}
             proOnly
           />
+          <OptionRow
+            icon={Sparkles}
+            title="Отвечать с помощью ИИ"
+            subtitle="ИИ напишет ответ по вашей базе знаний, текст выше — запасной"
+            checked={form.aiReply}
+            onChange={(aiReply) => set({ aiReply })}
+            proOnly
+          />
         </ListGroup>
 
         {(form.responseText || form.photos.length > 0) && (
@@ -524,6 +538,7 @@ function RuleRow({ rule, onOpen, onToggle }) {
     rule.skip_if_owner_active_minutes > 0 && { icon: Hand, label: "не мешать" },
     rule.typing_delay_seconds > 0 && { icon: Keyboard, label: "печатает" },
     rule.notify_owner && { icon: BellRing, label: "уведомления" },
+    rule.ai_reply && { icon: Sparkles, label: "ИИ" },
   ].filter(Boolean);
   return (
     <motion.div
@@ -588,6 +603,7 @@ export default function AutoresponderPage() {
   const [rules, setRules] = useState(null);
   const [error, setError] = useState("");
   const [sheet, setSheet] = useState({ open: false, rule: null });
+  const [tab, setTab] = useState("rules");
 
   const accountId = activeAccount?.id;
 
@@ -657,6 +673,7 @@ export default function AutoresponderPage() {
         title="Автоответчик"
         subtitle="Отвечает в личных сообщениях, пока вы заняты"
         action={
+          tab === "rules" &&
           rules?.length > 0 && (
             <Button size="sm" icon={atLimit ? Crown : Plus} onClick={openNew}>
               Правило
@@ -665,9 +682,22 @@ export default function AutoresponderPage() {
         }
       />
 
-      <ErrorNote>{error}</ErrorNote>
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: "rules", label: "Правила" },
+          { value: "snippets", label: "Фразы" },
+          { value: "ai", label: "ИИ" },
+        ]}
+      />
 
-      {rules === null ? (
+      {tab === "snippets" && <SnippetsPanel accountId={accountId} />}
+      {tab === "ai" && <AiPanel accountId={accountId} />}
+
+      {tab === "rules" && <ErrorNote>{error}</ErrorNote>}
+
+      {tab !== "rules" ? null : rules === null ? (
         <div className="space-y-3">
           <Skeleton className="h-24" />
           <Skeleton className="h-24" />

@@ -14,6 +14,7 @@ PRO_RULE_FIELDS = (
     "skip_if_owner_active_minutes",
     "typing_delay_seconds",
     "notify_owner",
+    "ai_reply",
 )
 
 
@@ -62,6 +63,7 @@ class AutoresponderRuleIn(_RuleOptionsValidators):
     skip_if_owner_active_minutes: int = Field(ge=0, le=24 * 60, default=0)
     typing_delay_seconds: int = Field(ge=0, le=30, default=0)
     notify_owner: bool = False
+    ai_reply: bool = False
 
 
 class AutoresponderRuleUpdate(_RuleOptionsValidators):
@@ -84,6 +86,7 @@ class AutoresponderRuleUpdate(_RuleOptionsValidators):
     skip_if_owner_active_minutes: int | None = Field(ge=0, le=24 * 60, default=None)
     typing_delay_seconds: int | None = Field(ge=0, le=30, default=None)
     notify_owner: bool | None = None
+    ai_reply: bool | None = None
 
 
 class AutoresponderRuleOut(BaseModel):
@@ -107,6 +110,7 @@ class AutoresponderRuleOut(BaseModel):
     skip_if_owner_active_minutes: int
     typing_delay_seconds: int
     notify_owner: bool
+    ai_reply: bool
     # Autoreplies sent by this rule during the last 7 days (filled by the API).
     replies_7d: int = 0
 

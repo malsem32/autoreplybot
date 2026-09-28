@@ -27,6 +27,7 @@ from backend.models.autoresponder_rule import AutoresponderEvent, AutoresponderR
 from backend.models.broadcast import BroadcastCampaign, BroadcastLog, FloodWaitEvent
 from backend.models.lead import Lead
 from backend.models.proxy import Proxy
+from backend.models.snippet import Snippet
 from backend.models.team import AccountMember, TeamInvite
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
@@ -310,6 +311,9 @@ async def delete_account(
             )
         ).scalars()
     )
+    snippets = list(
+        (await db.execute(select(Snippet).where(Snippet.account_id == account.id))).scalars()
+    )
     campaign_ids = [c.id for c in campaigns]
     if campaign_ids:
         await db.execute(delete(BroadcastLog).where(BroadcastLog.campaign_id.in_(campaign_ids)))
@@ -324,6 +328,9 @@ async def delete_account(
     for rule in rules:
         delete_uploads(rule.photo_paths)
         await db.delete(rule)
+    for snippet in snippets:
+        delete_uploads(snippet.photo_paths)
+        await db.delete(snippet)
     await db.flush()
     await db.delete(account)
     await db.commit()

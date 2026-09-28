@@ -4,6 +4,7 @@ from backend.models.broadcast import BroadcastCampaign, BroadcastLog, FloodWaitE
 from backend.models.feature_settings import ProSetting
 from backend.models.lead import Lead
 from backend.models.proxy import Proxy
+from backend.models.snippet import Snippet
 from backend.models.team import AccountMember, TeamInvite
 from backend.models.telegram_account import TelegramAccount
 from backend.models.template import MessageTemplate
@@ -21,6 +22,7 @@ __all__ = [
     "MessageTemplate",
     "ProSetting",
     "Proxy",
+    "Snippet",
     "TeamInvite",
     "TelegramAccount",
     "User",

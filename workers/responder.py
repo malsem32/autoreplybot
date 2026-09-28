@@ -16,7 +16,7 @@ from backend.models.broadcast import FloodWaitEvent
 from backend.models.lead import Lead
 from backend.models.telegram_account import TelegramAccount
 from backend.models.user import User
-from backend.services import pro
+from backend.services import ai, away, pro
 from backend.services.rule_match import matches
 from backend.services.schedule import is_within_schedule
 from workers.notify import esc, notify_user
@@ -116,7 +116,9 @@ async def _rule_applies(
     return True
 
 
-async def _load(account_id: int) -> tuple[list[AutoresponderRule], User | None]:
+async def _load(
+    account_id: int,
+) -> tuple[list[AutoresponderRule], User | None, TelegramAccount | None]:
     async with SessionLocal() as db:
         result = await db.execute(
             select(AutoresponderRule)
@@ -131,7 +133,8 @@ async def _load(account_id: int) -> tuple[list[AutoresponderRule], User | None]:
             .join(TelegramAccount, TelegramAccount.user_id == User.id)
             .where(TelegramAccount.id == account_id)
         )
-        return list(result.scalars().all()), owner
+        account = await db.get(TelegramAccount, account_id)
+        return list(result.scalars().all()), owner, account
 
 
 async def _record(event: AutoresponderEvent | FloodWaitEvent) -> None:
@@ -157,7 +160,9 @@ async def _type_for(client: Client, chat_id: int, seconds: int) -> None:
         remaining -= step
 
 
-def _notification_text(message: Message, rule: AutoresponderRule, in_group: bool = False) -> str:
+def _notification_text(
+    message: Message, rule: AutoresponderRule, in_group: bool = False, by_ai: bool = False
+) -> str:
     sender = message.from_user
     assert sender is not None  # bots and anonymous senders are filtered out earlier
     name = esc(" ".join(p for p in (sender.first_name, sender.last_name) if p) or "Без имени")
@@ -172,7 +177,7 @@ def _notification_text(message: Message, rule: AutoresponderRule, in_group: bool
     return (
         f"💬 <b>Новое обращение</b> от {name}{handle}{where}\n\n"
         f"<blockquote>{esc(incoming)}</blockquote>\n"
-        f"Автопилот ответил по правилу «{esc(trigger)}»."
+        f"Автопилот ответил{' с помощью ИИ' if by_ai else ''} по правилу «{esc(trigger)}»."
     )
 
 
@@ -229,6 +234,56 @@ def lead_keyboard(lead: Lead | None, username: str | None) -> dict | None:
     return {"inline_keyboard": rows} if rows else None
 
 
+async def _send_reply(
+    client: Client,
+    account_id: int,
+    chat_id: int,
+    text: str,
+    photo_paths: list[str],
+    reply_to: int,
+) -> bool:
+    """Sends one autoreply; FloodWait is slept out once (AGENTS.md 4.3:
+    never retried head-on). True if the reply went out."""
+    for _attempt in range(2):
+        try:
+            await send_content(
+                client, chat_id, text, photo_paths, SendOptions(reply_to_message_id=reply_to)
+            )
+            return True
+        except FloodWait as exc:
+            wait = flood_wait_seconds(exc)
+            await _record(FloodWaitEvent(account_id=account_id, seconds=wait, source="autoreply"))
+            await asyncio.sleep(wait + 5)
+        except Exception:  # noqa: BLE001 - one failed reply must not kill the handler
+            logger.exception("autoreply failed for account %s", account_id)
+            return False
+    return False
+
+
+async def _ai_answer(
+    client: Client,
+    chat_id: int,
+    account: TelegramAccount,
+    owner: User,
+    fallback_text: str,
+    incoming: str,
+) -> str | None:
+    """AI-written reply (Pro). None → the caller sends the rule text: AI off,
+    empty message (e.g. a sticker), daily limit reached or provider error."""
+    if not ai.is_configured() or not incoming.strip():
+        return None
+    if not await ai.take_quota(_redis, owner.id):
+        return None
+    # "Typing…" while the model thinks, so the pause looks natural.
+    typing = asyncio.create_task(_type_for(client, chat_id, int(settings.ai_timeout_seconds)))
+    try:
+        return await ai.generate_reply(
+            account.ai_knowledge, account.ai_tone, fallback_text, incoming
+        )
+    finally:
+        typing.cancel()
+
+
 def register_responder(client: Client, account_id: int) -> None:
     """Wires private-message autoreply for one account's client.
 
@@ -250,7 +305,7 @@ def register_responder(client: Client, account_id: int) -> None:
             return
 
         peer_id = message.from_user.id
-        rules, owner = await _load(account_id)
+        rules, owner, account = await _load(account_id)
         has_pro = owner is not None and pro.has_access(owner)
 
         lead = None
@@ -262,8 +317,19 @@ def register_responder(client: Client, account_id: int) -> None:
 
         chat_id = (message.chat.id if message.chat else None) or peer_id
         incoming = message.text or message.caption or ""
-        ctx = _ChatContext(client, chat_id)
 
+        # Vacation mode wins over every rule in private chats (AGENTS.md 4.17).
+        if not in_group and account is not None and away.is_away(account, datetime.now(UTC)):
+            assert account.away_until is not None
+            await _set_cooldown(account_id, peer_id, away.AWAY_COOLDOWN_SECONDS)
+            text = away.render_away_text(
+                render_spintax(account.away_text), account.away_until, account.away_timezone
+            )
+            if await _send_reply(client, account_id, chat_id, text, [], message.id):
+                await _record(AutoresponderEvent(rule_id=None, account_id=account_id, kind="away"))
+            return
+
+        ctx = _ChatContext(client, chat_id)
         rule = None
         for candidate in rules:
             if not scope_allows(candidate, in_group, has_pro) or not _matches(candidate, incoming):
@@ -287,32 +353,26 @@ def register_responder(client: Client, account_id: int) -> None:
             : pro.PRO_MAX_PHOTOS if has_pro else pro.FREE_MAX_PHOTOS
         ]
 
-        if has_pro and rule.typing_delay_seconds:
+        by_ai = False
+        if has_pro and rule.ai_reply and account is not None and owner is not None:
+            answer = await _ai_answer(client, chat_id, account, owner, text, incoming)
+            if answer:
+                text, by_ai = answer, True
+
+        if has_pro and rule.typing_delay_seconds and not by_ai:
             await _type_for(client, chat_id, rule.typing_delay_seconds)
 
-        for _attempt in range(2):
-            try:
-                await send_content(
-                    client, chat_id, text, photo_paths, SendOptions(reply_to_message_id=message.id)
-                )
-                break
-            except FloodWait as exc:
-                # AGENTS.md 4.3: sleep it out, never retry head-on.
-                wait = flood_wait_seconds(exc)
-                await _record(
-                    FloodWaitEvent(account_id=account_id, seconds=wait, source="autoreply")
-                )
-                await asyncio.sleep(wait + 5)
-            except Exception:  # noqa: BLE001 - one failed reply must not kill the handler
-                logger.exception("autoreply failed for account %s", account_id)
-                return
-        else:
+        if not await _send_reply(client, account_id, chat_id, text, photo_paths, message.id):
             return
 
-        await _record(AutoresponderEvent(rule_id=rule.id, account_id=account_id))
+        await _record(
+            AutoresponderEvent(
+                rule_id=rule.id, account_id=account_id, kind="ai" if by_ai else "rule"
+            )
+        )
         if has_pro and rule.notify_owner and owner is not None:
             await notify_user(
                 owner.telegram_id,
-                _notification_text(message, rule, in_group),
+                _notification_text(message, rule, in_group, by_ai),
                 lead_keyboard(lead, message.from_user.username),
             )

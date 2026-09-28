@@ -68,7 +68,7 @@ class FloodWaitEvent(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     account_id: Mapped[int] = mapped_column(ForeignKey("telegram_accounts.id"), index=True)
     seconds: Mapped[int] = mapped_column(Integer)
-    source: Mapped[str] = mapped_column(String(16))  # broadcast | autoreply
+    source: Mapped[str] = mapped_column(String(16))  # broadcast | autoreply | snippet
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
     )

@@ -15,6 +15,7 @@ from workers.broadcaster import run_campaign
 from workers.client_manager import client_manager
 from workers.digests import send_pro_reminders, send_weekly_digests
 from workers.responder import register_responder
+from workers.snippets import register_snippets
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +70,7 @@ async def ensure_responders_running() -> None:
 
             if account.id not in _responder_registered:
                 register_responder(client, account.id)
+                register_snippets(client, account.id)
                 _responder_registered.add(account.id)
 
 

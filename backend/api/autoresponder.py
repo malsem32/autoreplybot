@@ -54,7 +54,7 @@ def _require_pro_for_options(owner: User, data: dict) -> None:
     ):
         raise HTTPException(
             status.HTTP_402_PAYMENT_REQUIRED,
-            "Расписание, умные фильтры, группы и уведомления доступны в Pro",
+            "Расписание, умные фильтры, группы, уведомления и ИИ-ответы доступны в Pro",
         )
 
 
@@ -67,7 +67,7 @@ async def _replies_7d(db: AsyncSession, rule_ids: list[int]) -> dict[int, int]:
         .where(AutoresponderEvent.rule_id.in_(rule_ids), AutoresponderEvent.created_at >= since)
         .group_by(AutoresponderEvent.rule_id)
     )
-    return dict(rows.tuples().all())
+    return {rule_id: n for rule_id, n in rows.tuples().all() if rule_id is not None}
 
 
 async def _to_out(db: AsyncSession, rule: AutoresponderRule) -> AutoresponderRuleOut:

@@ -128,6 +128,21 @@ export const api = {
     request(`/team/${accountId}/members/${memberId}`, { method: "DELETE" }),
   leaveTeam: (accountId) => request(`/team/${accountId}/leave`, { method: "POST" }),
 
+  getAway: (accountId) => request(`/away/${accountId}`),
+  setAway: (accountId, body) => request(`/away/${accountId}`, { method: "PUT", body }),
+  stopAway: (accountId) => request(`/away/${accountId}`, { method: "DELETE" }),
+
+  listSnippets: (accountId) => request(`/snippets/${accountId}`),
+  createSnippet: (accountId, body) => request(`/snippets/${accountId}`, { method: "POST", body }),
+  updateSnippet: (accountId, id, patch) =>
+    request(`/snippets/${accountId}/${id}`, { method: "PATCH", body: patch }),
+  deleteSnippet: (accountId, id) => request(`/snippets/${accountId}/${id}`, { method: "DELETE" }),
+
+  getAi: (accountId) => request(`/ai/${accountId}`),
+  saveAi: (accountId, body) => request(`/ai/${accountId}`, { method: "PUT", body }),
+  previewAi: (accountId, text) =>
+    request(`/ai/${accountId}/preview`, { method: "POST", body: { text } }),
+
   getMe: () => request("/me"),
   updateMe: (patch) => request("/me", { method: "PATCH", body: patch }),
 

@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 _redis: Redis | None = None
 
 
-def _get_redis() -> Redis:
+def get_redis() -> Redis:
     global _redis
     if _redis is None:
         _redis = Redis.from_url(settings.redis_url)
@@ -27,7 +27,7 @@ async def hit(scope: str, user_id: int, limit: int, window_seconds: int) -> bool
     Redis outage must not lock every user out of logging in."""
     key = f"ratelimit:{scope}:{user_id}"
     try:
-        redis = _get_redis()
+        redis = get_redis()
         count = await redis.incr(key)
         if count == 1:
             await redis.expire(key, window_seconds)

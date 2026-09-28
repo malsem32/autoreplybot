@@ -24,6 +24,16 @@ class Settings(BaseSettings):
     # Telegram user_ids allowed to see /api/admin/* inside the Mini App
     admin_telegram_ids: str = ""
 
+    # AI replies (backend/services/ai.py). Empty provider = feature off.
+    # "openai_compat": any OpenAI-compatible Chat Completions API (OpenRouter,
+    # Groq, a local server...), "anthropic": Claude via the official SDK.
+    ai_provider: str = ""
+    ai_api_key: str = ""
+    ai_base_url: str = "https://openrouter.ai/api/v1"
+    ai_model: str = ""
+    ai_timeout_seconds: float = 20.0
+    ai_daily_limit: int = 50  # AI replies + previews per user per day
+
     @property
     def required_channels_list(self) -> list[str]:
         return [c.strip() for c in self.required_channels.split(",") if c.strip()]

@@ -3,6 +3,7 @@ import { Crown, Gift, Inbox, MessageCircleReply, Plus, Send } from "lucide-react
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
+import AwayCard from "../components/AwayCard.jsx";
 import AccountSwitcher from "../components/AccountSwitcher.jsx";
 import Horizon from "../components/Horizon.jsx";
 import AddAccountSheet from "../components/login/AddAccountSheet.jsx";
@@ -168,6 +169,8 @@ export default function HomePage() {
           />
         </div>
       </section>
+
+      <AwayCard accountId={activeAccount.id} />
 
       <ListGroup title="Что делает автопилот">
         <ListRow

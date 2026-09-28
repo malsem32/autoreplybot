@@ -20,7 +20,7 @@ class _FakeRedis:
 
 async def test_rate_limit_blocks_after_limit_per_user(monkeypatch):
     fake = _FakeRedis()
-    monkeypatch.setattr(rate_limit, "_get_redis", lambda: fake)
+    monkeypatch.setattr(rate_limit, "get_redis", lambda: fake)
     results = [await rate_limit.hit("auth_code", 1, limit=2, window_seconds=60) for _ in range(3)]
     assert results == [True, True, False]
     assert await rate_limit.hit("auth_code", 2, limit=2, window_seconds=60)  # other user
@@ -32,7 +32,7 @@ async def test_rate_limit_fails_open_without_redis(monkeypatch):
         async def incr(self, key):
             raise RedisConnectionError("down")
 
-    monkeypatch.setattr(rate_limit, "_get_redis", lambda: _Broken())
+    monkeypatch.setattr(rate_limit, "get_redis", lambda: _Broken())
     assert await rate_limit.hit("auth_code", 1, limit=1, window_seconds=60)
 
 

@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from backend.api.admin import router as admin_router
+from backend.api.assistant import router as assistant_router
 from backend.api.auth import router as auth_router
 from backend.api.autoresponder import router as autoresponder_router
 from backend.api.broadcasts import router as broadcasts_router
@@ -17,6 +18,7 @@ configure_logging()
 app = FastAPI(title="Autopilot Backend")
 
 app.include_router(auth_router)
+app.include_router(assistant_router)
 app.include_router(autoresponder_router)
 app.include_router(broadcasts_router)
 app.include_router(crm_router)

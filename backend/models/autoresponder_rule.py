@@ -43,6 +43,10 @@ class AutoresponderRule(TimestampMixin, Base):
     typing_delay_seconds: Mapped[int] = mapped_column(Integer, default=0)
     # Ping the owner in the bot chat whenever this rule answers someone.
     notify_owner: Mapped[bool] = mapped_column(Boolean, default=False)
+    # Let the AI write the answer from the account's knowledge base
+    # (backend/services/ai.py); response_text is the fallback when the AI
+    # is off, out of quota or fails.
+    ai_reply: Mapped[bool] = mapped_column(Boolean, default=False)
 
 
 class AutoresponderEvent(Base):
@@ -53,7 +57,11 @@ class AutoresponderEvent(Base):
     __tablename__ = "autoresponder_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    rule_id: Mapped[int] = mapped_column(ForeignKey("autoresponder_rules.id"), index=True)
+    # None for vacation-mode replies, which don't belong to a rule.
+    rule_id: Mapped[int | None] = mapped_column(
+        ForeignKey("autoresponder_rules.id"), index=True, nullable=True
+    )
+    kind: Mapped[str] = mapped_column(String(16), default="rule")  # rule | ai | away
     account_id: Mapped[int] = mapped_column(ForeignKey("telegram_accounts.id"), index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), index=True
