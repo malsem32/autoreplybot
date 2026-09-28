@@ -96,6 +96,9 @@ class FakeClient:
     handle_updates = None
 
 
+_REAL_NEW_CLIENT = auth._new_client
+
+
 @pytest.fixture(autouse=True)
 def fake_client(monkeypatch):
     FakeClient.instances = []
@@ -371,3 +374,31 @@ async def test_unreachable_telegram_fails_fast_instead_of_hanging(api, monkeypat
     )
     assert resp.status_code == 503
     assert "Telegram" in resp.json()["detail"]
+
+
+async def test_worker_and_login_present_the_same_device(monkeypatch):
+    """One session must not flip between "Автопилот" and "Pyrogram/CPython"
+    on the account's Devices screen (login vs worker)."""
+    from backend.api import auth
+    from backend.core.telegram_client import CLIENT_IDENTITY
+    from workers import client_manager as cm
+
+    created: list[dict] = []
+
+    class _Client:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+
+        async def start(self):
+            return None
+
+    monkeypatch.setattr(cm, "Client", _Client)
+    monkeypatch.setattr(cm, "decrypt_session", lambda _s: "session")
+    await cm.ClientManager().start(1, "encrypted")
+
+    monkeypatch.setattr(auth, "Client", _Client)
+    _REAL_NEW_CLIENT("login")  # the autouse fixture replaces auth._new_client
+    assert len(created) == 2
+    for kwargs in created:
+        for key, value in CLIENT_IDENTITY.items():
+            assert kwargs[key] == value

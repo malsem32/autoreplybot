@@ -4,6 +4,7 @@ from pyrogram import Client
 
 from backend.core.config import settings
 from backend.core.security import decrypt_session
+from backend.core.telegram_client import CLIENT_IDENTITY
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,8 @@ class ClientManager:
             api_hash=settings.api_hash,
             session_string=decrypt_session(encrypted_session),
             in_memory=True,
+            # Same identity as at login: one session, one name on "Devices".
+            **CLIENT_IDENTITY,
         )
         await client.start()
         self._clients[account_id] = client

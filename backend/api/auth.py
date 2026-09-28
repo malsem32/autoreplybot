@@ -20,6 +20,7 @@ from backend.api.deps import get_current_user
 from backend.core.config import settings
 from backend.core.rate_limit import rate_limit
 from backend.core.security import decrypt_secret, encrypt_session
+from backend.core.telegram_client import CLIENT_IDENTITY
 from backend.core.telegram_errors import RETRYABLE_INPUT_ERRORS, error_id, to_http_error
 from backend.core.uploads import delete_uploads
 from backend.db.session import get_db
@@ -55,10 +56,6 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 # dropped and its temporary client disconnected.
 PENDING_LOGIN_TTL_SECONDS = 10 * 60
 
-# Shown to Telegram as the name of the new session ("Devices" screen).
-CLIENT_APP_VERSION = "1.0"
-CLIENT_DEVICE_MODEL = "Автопилот"
-CLIENT_SYSTEM_VERSION = "Web"
 
 _LOGIN_EXPIRED = "Сессия входа устарела. Запросите код заново"
 
@@ -131,14 +128,10 @@ def _new_client(name: str, proxy: Any = None) -> Client:
         name=name,
         api_id=settings.api_id,
         api_hash=settings.api_hash,
-        app_version=CLIENT_APP_VERSION,
-        device_model=CLIENT_DEVICE_MODEL,
-        system_version=CLIENT_SYSTEM_VERSION,
-        lang_code="ru",
-        system_lang_code="ru",
         in_memory=True,
         no_updates=False,
         proxy=proxy,
+        **CLIENT_IDENTITY,
     )
 
 
