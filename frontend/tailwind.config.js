@@ -37,10 +37,15 @@ export default {
           "0%": { transform: "scale(0.9)", opacity: "0.7" },
           "100%": { transform: "scale(1.35)", opacity: "0" },
         },
+        horizonTilt: {
+          "0%, 100%": { transform: "rotate(-5deg) translateY(-3px)" },
+          "50%": { transform: "rotate(4deg) translateY(4px)" },
+        },
       },
       animation: {
         shimmer: "shimmer 1.4s infinite",
         pulseRing: "pulseRing 2.4s cubic-bezier(0.2, 0.6, 0.3, 1) infinite",
+        horizonTilt: "horizonTilt 9s ease-in-out infinite",
       },
     },
   },

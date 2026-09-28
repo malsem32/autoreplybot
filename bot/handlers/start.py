@@ -1,12 +1,14 @@
 from aiogram import Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import CommandObject, CommandStart
+from aiogram.fsm.context import FSMContext
 from aiogram.types import Message
 from sqlalchemy import select
 
 from backend.db.session import SessionLocal
 from backend.models.user import User
-from backend.services import referrals, team
+from backend.services import referrals, support, team
+from bot.handlers.support import ask_for_problem
 from bot.keyboards.webapp import open_app_keyboard
 
 router = Router(name="start")
@@ -58,7 +60,10 @@ async def _join_team(message: Message, token: str) -> None:
 
 
 @router.message(CommandStart())
-async def start(message: Message, command: CommandObject) -> None:
+async def start(message: Message, command: CommandObject, state: FSMContext) -> None:
+    if command.args == support.HELP_START_CODE:
+        await ask_for_problem(message, state)
+        return
     token = team.parse_team_code(command.args)
     if token and message.from_user is not None:
         await _join_team(message, token)
@@ -73,7 +78,8 @@ async def start(message: Message, command: CommandObject) -> None:
         "Подключите аккаунт и настройте правила за 2 минуты 👇\n\n"
         "⭐️ /pro — рабочие часы и умные автоответы, уведомления, статистика рассылок, "
         "альбомы и безлимит.\n"
-        "🎁 /invite — пригласите друга и получите дни Pro бесплатно.",
+        "🎁 /invite — пригласите друга и получите дни Pro бесплатно.\n"
+        "🆘 /help — написать в поддержку.",
         reply_markup=open_app_keyboard(),
         parse_mode="HTML",
     )

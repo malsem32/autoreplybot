@@ -97,7 +97,7 @@ export default function AiPanel({ accountId }) {
     <div className="space-y-4">
       <div className="relative overflow-hidden rounded-[18px] bg-surface p-4">
         <div
-          className="pointer-events-none absolute -right-10 -top-10 h-32 w-32 rounded-full bg-sky/20 blur-3xl"
+          className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-[radial-gradient(closest-side,rgb(var(--sky)/0.22),transparent)]"
           aria-hidden
         />
         <p className="relative flex items-center gap-2 text-[15px] font-semibold">

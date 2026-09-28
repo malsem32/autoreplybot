@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "framer-motion";
+import { motion } from "framer-motion";
 import { useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router-dom";
 import Nav, { tabIndex } from "./components/Nav.jsx";
@@ -29,40 +29,31 @@ function AnimatedRoutes() {
   const direction = index === prev.current ? 0 : index > prev.current ? 1 : -1;
   prev.current = index;
 
+  // Enter-only transition. An exit animation would keep the previous page
+  // mounted (and tappable) on top of the new one until it finished — on a
+  // slow phone that swallowed taps meant for the new page.
   return (
-    <AnimatePresence mode="popLayout" initial={false} custom={direction}>
-      <motion.main
-        key={location.pathname}
-        custom={direction}
-        variants={{
-          enter: (d) => ({ opacity: 0, x: d * 28 }),
-          center: { opacity: 1, x: 0 },
-          exit: (d) => ({ opacity: 0, x: d * -28 }),
-        }}
-        initial="enter"
-        animate="center"
-        exit="exit"
-        transition={{ duration: 0.22, ease: [0.2, 0.7, 0.2, 1] }}
-        className="mx-auto max-w-lg"
-      >
-        <Routes location={location}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/autoresponder" element={<AutoresponderPage />} />
-          <Route path="/leads" element={<LeadsPage />} />
-          <Route path="/broadcast" element={<BroadcastPage />} />
-          <Route path="/profile" element={<ProfilePage />} />
-          <Route
-            path="/admin/stats"
-            element={<AdminOnly isAdmin={isAdmin} page={<StatsPage />} />}
-          />
-          <Route
-            path="/admin/proxies"
-            element={<AdminOnly isAdmin={isAdmin} page={<ProxiesPage />} />}
-          />
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </motion.main>
-    </AnimatePresence>
+    <motion.main
+      key={location.pathname}
+      initial={{ opacity: 0, x: direction * 16 }}
+      animate={{ opacity: 1, x: 0 }}
+      transition={{ duration: 0.2, ease: [0.2, 0.7, 0.2, 1] }}
+      className="mx-auto max-w-lg"
+    >
+      <Routes location={location}>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/autoresponder" element={<AutoresponderPage />} />
+        <Route path="/leads" element={<LeadsPage />} />
+        <Route path="/broadcast" element={<BroadcastPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/admin/stats" element={<AdminOnly isAdmin={isAdmin} page={<StatsPage />} />} />
+        <Route
+          path="/admin/proxies"
+          element={<AdminOnly isAdmin={isAdmin} page={<ProxiesPage />} />}
+        />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </motion.main>
   );
 }
 
@@ -73,7 +64,7 @@ export default function App() {
           bar and Telegram's floating buttons. Zero-height otherwise. */}
       <div
         aria-hidden
-        className="pointer-events-none fixed inset-x-0 top-0 z-30 bg-bg/85 backdrop-blur-xl"
+        className="pointer-events-none fixed inset-x-0 top-0 z-30 bg-bg"
         style={{ height: "var(--inset-top)" }}
       />
       <div

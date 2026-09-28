@@ -12,10 +12,12 @@ import { ErrorNote, Skeleton } from "../components/ui/Feedback.jsx";
 import { ListGroup, ListRow } from "../components/ui/List.jsx";
 import Switch from "../components/ui/Switch.jsx";
 import plural from "../lib/plural.js";
-import { haptic } from "../lib/telegram.js";
+import { haptic, openTelegramLink } from "../lib/telegram.js";
 import { useApp } from "../state/AppContext.jsx";
 
 function Welcome({ onAdd }) {
+  const { pro } = useApp();
+  const helpLink = pro?.bot_username ? `https://t.me/${pro.bot_username}?start=help` : null;
   return (
     <div className="flex min-h-[calc(var(--app-height)-var(--inset-top)-var(--inset-bottom)-110px)] flex-col items-center justify-center px-2 text-center">
       <motion.div
@@ -42,6 +44,15 @@ function Welcome({ onAdd }) {
           Подключить аккаунт
         </Button>
         <p className="mt-3 text-[13px] text-faint">Займёт пару минут: номер и код из Telegram</p>
+        {helpLink && (
+          <button
+            type="button"
+            onClick={() => openTelegramLink(helpLink)}
+            className="mt-5 text-[13px] font-semibold text-sky"
+          >
+            Не получается войти? Напишите нам
+          </button>
+        )}
       </motion.div>
     </div>
   );

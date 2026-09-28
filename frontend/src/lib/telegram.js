@@ -118,6 +118,15 @@ export async function copyText(text) {
   }
 }
 
+/** t.me links open inside Telegram (e.g. the bot chat) without closing the app. */
+export function openTelegramLink(url) {
+  const opened = safe(() => {
+    WebApp.openTelegramLink(url);
+    return true;
+  });
+  if (!opened) window.open(url, "_blank");
+}
+
 export function openLink(url) {
   const opened = safe(() => {
     WebApp.openLink(url);

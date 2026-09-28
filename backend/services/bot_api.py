@@ -20,6 +20,11 @@ def _url(method: str) -> str:
 async def send_message(telegram_id: int, text: str, reply_markup: dict | None = None) -> bool:
     """Best effort: the user may never have started the bot or may have
     blocked it. Never logs the text."""
+    return await post_message(telegram_id, text, reply_markup) is not None
+
+
+async def post_message(telegram_id: int, text: str, reply_markup: dict | None = None) -> int | None:
+    """Like send_message, but returns the sent message id (None on failure)."""
     payload: dict = {
         "chat_id": telegram_id,
         "text": text,
@@ -33,10 +38,12 @@ async def send_message(telegram_id: int, text: str, reply_markup: dict | None = 
             resp = await client.post(_url("sendMessage"), json=payload)
         if resp.status_code != 200:
             logger.info("bot message not delivered (status %s)", resp.status_code)
-        return resp.status_code == 200
-    except httpx.HTTPError:
+            return None
+        message_id = resp.json().get("result", {}).get("message_id")
+        return int(message_id) if message_id is not None else None
+    except (httpx.HTTPError, ValueError):
         logger.info("bot message failed")
-        return False
+        return None
 
 
 def build_csv(headers: list[str], rows: Sequence[Sequence[object]]) -> bytes:

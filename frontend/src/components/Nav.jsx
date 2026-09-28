@@ -23,7 +23,7 @@ export default function Nav() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg/95 backdrop-blur-xl"
+      className="fixed inset-x-0 bottom-0 z-40 border-t border-line/60 bg-bg"
       style={{ paddingBottom: "var(--inset-bottom)" }}
     >
       <div className="mx-auto flex max-w-lg">

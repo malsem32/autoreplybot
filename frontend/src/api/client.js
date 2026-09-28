@@ -143,6 +143,8 @@ export const api = {
   previewAi: (accountId, text) =>
     request(`/ai/${accountId}/preview`, { method: "POST", body: { text } }),
 
+  contactSupport: (text) => request("/support", { method: "POST", body: { text } }),
+
   getMe: () => request("/me"),
   updateMe: (patch) => request("/me", { method: "PATCH", body: patch }),
 

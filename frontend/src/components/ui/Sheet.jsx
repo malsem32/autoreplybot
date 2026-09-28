@@ -1,8 +1,23 @@
-import { AnimatePresence, motion, useDragControls } from "framer-motion";
+import { AnimatePresence, motion, useDragControls, useIsPresent } from "framer-motion";
 import { X } from "lucide-react";
 import { useEffect } from "react";
 import { createPortal } from "react-dom";
 import { bindBackButton } from "../../lib/telegram.js";
+
+/** While the closing animation plays the sheet must not catch taps meant
+ * for the page underneath. */
+function SheetFrame({ children }) {
+  const present = useIsPresent();
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-end justify-center ${present ? "" : "pointer-events-none"}`}
+      role="dialog"
+      aria-modal
+    >
+      {children}
+    </div>
+  );
+}
 
 /** Bottom sheet: slides up over the page, closes by drag-down, backdrop
  * tap, the ✕ or Telegram's native back button. */
@@ -23,9 +38,9 @@ export default function Sheet({ open, onClose, title, children, footer }) {
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal>
+        <SheetFrame>
           <motion.div
-            className="absolute inset-0 bg-black/55 backdrop-blur-[2px]"
+            className="absolute inset-0 bg-black/55"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -79,7 +94,7 @@ export default function Sheet({ open, onClose, title, children, footer }) {
               </div>
             )}
           </motion.div>
-        </div>
+        </SheetFrame>
       )}
     </AnimatePresence>,
     document.body,

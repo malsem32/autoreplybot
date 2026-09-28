@@ -46,6 +46,17 @@ class SubscriptionMiddleware(BaseMiddleware):
         if user is None:
             return await handler(event, data)
 
+        # Support must stay reachable for everyone: /help, the message that
+        # follows it, and admins answering.
+        if user.id in settings.admin_telegram_ids_list:
+            return await handler(event, data)
+        state = data.get("state")
+        if isinstance(event, Message) and (
+            (event.text or "").startswith(("/help", "/start help", "/cancel"))
+            or (state is not None and await state.get_state() is not None)
+        ):
+            return await handler(event, data)
+
         bot: Bot = data["bot"]
         if await is_subscribed(bot, user.id):
             return await handler(event, data)

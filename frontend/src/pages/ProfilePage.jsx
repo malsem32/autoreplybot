@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../api/client.js";
 import DigestToggle from "../components/DigestToggle.jsx";
+import HelpCard from "../components/HelpCard.jsx";
 import PageTitle from "../components/PageTitle.jsx";
 import TeamCard from "../components/TeamCard.jsx";
 import {
@@ -37,7 +38,7 @@ function ProCard() {
   return (
     <section className="relative overflow-hidden rounded-[22px] bg-surface p-5">
       <div
-        className="pointer-events-none absolute -right-16 -top-16 h-48 w-48 rounded-full bg-warn/20 blur-3xl"
+        className="pointer-events-none absolute -right-24 -top-24 h-64 w-64 rounded-full bg-[radial-gradient(closest-side,rgb(var(--warn)/0.22),transparent)]"
         aria-hidden
       />
       <div className="relative">
@@ -207,6 +208,7 @@ export default function ProfilePage() {
       <TeamCard />
       <DigestToggle />
       <ReferralCard />
+      <HelpCard />
       {isAdmin && (
         <ListGroup title="Администрирование">
           <ListRow
