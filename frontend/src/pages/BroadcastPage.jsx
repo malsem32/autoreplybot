@@ -230,11 +230,12 @@ function CampaignSheet({ open, campaign, onClose, onSave, onDelete }) {
             id="c-targets"
             value={form.targets}
             onChange={(targets) => set({ targets })}
-            placeholder="@my_channel, t.me/+AbCdEf, -100123…"
+            placeholder="@my_channel, t.me/+AbCdEf, t.me/addlist/…"
           />
           <p className="mt-1.5 text-xs leading-snug text-faint">
             Юзернейм, ссылка t.me или ID чата. По ссылке-приглашению аккаунт сначала вступит в чат.
-            Между чатами — пауза 20–45 секунд, чтобы Telegram не ограничил аккаунт.
+            Ссылка на папку (t.me/addlist/…) разворачивается во все её чаты, где аккаунт уже
+            состоит. Между чатами — пауза 20–45 секунд, чтобы Telegram не ограничил аккаунт.
           </p>
         </Field>
 

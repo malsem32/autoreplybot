@@ -17,7 +17,7 @@ from backend.services import pro
 from workers.notify import esc, notify_user
 from workers.sending import SendOptions, send_content
 from workers.spintax import render_spintax
-from workers.targets import resolve_target
+from workers.targets import expand_folder, folder_slug, resolve_target
 
 MIN_DELAY_SECONDS = 20
 MAX_DELAY_SECONDS = 45
@@ -111,6 +111,65 @@ def report_text(title: str, sent: int, failed: int, disabled: list[str]) -> str:
     return "\n".join(lines)
 
 
+def folder_chat_label(folder: str, title: str, chat_id: int) -> str:
+    """How one chat of a folder shows up in logs, stats and auto-disable."""
+    return f"{folder} → {title or chat_id}"
+
+
+async def _expand_targets(
+    client: Client, db: AsyncSession, campaign: BroadcastCampaign
+) -> list[tuple[str, str]]:
+    """(label, what to resolve) per chat. Chat-folder links become one entry
+    per chat of the folder, so each chat gets its own delay, log row and
+    stats; problems with a folder are logged right away."""
+    entries: list[tuple[str, str]] = []
+    for target in campaign.target_chats:
+        if folder_slug(target) is None:
+            entries.append((target, target))
+            continue
+        note: str | None = None
+        for _attempt in range(2):
+            try:
+                folder = await expand_folder(client, target)
+            except FloodWait as exc:
+                wait = flood_wait_seconds(exc)
+                db.add(
+                    FloodWaitEvent(account_id=campaign.account_id, seconds=wait, source="broadcast")
+                )
+                await db.commit()
+                await asyncio.sleep(wait + 5)
+                continue
+            except Exception as exc:  # noqa: BLE001 - reported in the campaign log
+                note = f"{target}: не удалось открыть папку ({exc})"
+                break
+            entries += [
+                (folder_chat_label(target, chat.title, chat.chat_id), str(chat.chat_id))
+                for chat in folder.chats
+            ]
+            if folder.missing:
+                note = (
+                    f"{target}: {folder.missing} чат(ов) папки пропущено — аккаунт в них не "
+                    "состоит. Откройте ссылку в Telegram и добавьте папку, тогда они попадут "
+                    "в рассылку"
+                )
+            elif not folder.chats:
+                note = f"{target}: в папке нет чатов, где состоит аккаунт"
+            break
+        if note:
+            db.add(
+                BroadcastLog(
+                    campaign_id=campaign.id,
+                    target=target,
+                    chat_id=0,
+                    sent_at=datetime.now(UTC),
+                    status="error",
+                    error_message=note,
+                )
+            )
+            await db.commit()
+    return entries
+
+
 async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCampaign) -> None:
     """Sends `campaign.text_template` to every chat in `target_chats`.
 
@@ -130,11 +189,12 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
     max_photos = pro.PRO_MAX_PHOTOS if is_pro else pro.FREE_MAX_PHOTOS
     photo_paths = list(campaign.photo_paths or [])
     skipped = set(campaign.disabled_targets or []) if is_pro else set()
-    targets = [t for t in campaign.target_chats if t not in skipped]
+    expanded = await _expand_targets(client, db, campaign)
+    targets = [(label, ref) for label, ref in expanded if label not in skipped]
 
     sent = failed = 0
     newly_disabled: list[str] = []
-    for index, raw_target in enumerate(targets):
+    for index, (raw_target, send_ref) in enumerate(targets):
         if index > 0:
             # Pausing/deleting in the Mini App takes effect mid-run, not
             # only after the whole (possibly long) target list is done.
@@ -148,7 +208,7 @@ async def run_campaign(client: Client, db: AsyncSession, campaign: BroadcastCamp
 
         while True:
             try:
-                chat_id = await resolve_target(client, raw_target)
+                chat_id = await resolve_target(client, send_ref)
                 text = await _append_random_tags(client, chat_id, base_text, tag_enabled)
                 await send_content(
                     client,
