@@ -14,14 +14,20 @@ class BroadcastCampaign(TimestampMixin, Base):
 
     title: Mapped[str] = mapped_column(String(255))
     text_template: Mapped[str] = mapped_column(String)
-    photo_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Up to 10 photos under backend/core/uploads.UPLOAD_DIR; 2+ go out as an album.
+    photo_paths: Mapped[list[str]] = mapped_column(JSON, default=list)
     # Each entry: numeric chat id as a string, "@username", or a t.me/... link
     # (including invite links) — resolved at send time, see workers/targets.py.
     target_chats: Mapped[list[str]] = mapped_column(JSON, default=list)
 
-    # When enabled, every `​` (zero-width space) in `text_template` is
-    # replaced per-chat with mentions of 5 random members of that chat.
+    # Pro: invisible mentions of 5 random members of each target chat are
+    # appended to the message (workers/broadcaster.py, AGENTS.md 4.13).
     tag_random_users: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    # Send options. protect_content (no forwarding/saving) is Pro-only.
+    disable_notification: Mapped[bool] = mapped_column(Boolean, default=False)
+    protect_content: Mapped[bool] = mapped_column(Boolean, default=False)
+    disable_link_preview: Mapped[bool] = mapped_column(Boolean, default=False)
 
     schedule_type: Mapped[str] = mapped_column(String(16), default="recurring")  # recurring | once
     interval_minutes: Mapped[int] = mapped_column(Integer, default=60)

@@ -9,7 +9,10 @@ asyncpg==0.29.0
 alembic==1.13.3
 redis==5.0.8
 apscheduler==3.10.4
-pyrogram==2.0.106
+# kurigram: maintained drop-in fork of Pyrogram (imports as `pyrogram`), current
+# MTProto layer — upstream pyrogram 2.0.106 is frozen on layer 158, which
+# Telegram increasingly rejects at login (UPDATE_APP_TO_LOGIN / codes not delivered).
+kurigram==2.2.26
 tgcrypto==1.2.5
 python-socks[asyncio]==2.5.3
 cryptography==43.0.1
@@ -19,3 +22,4 @@ mypy==1.11.2
 pytest==8.3.3
 pytest-asyncio==0.24.0
 httpx==0.27.2
+aiosqlite==0.20.0

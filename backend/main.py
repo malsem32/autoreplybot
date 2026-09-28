@@ -6,6 +6,7 @@ from backend.api.autoresponder import router as autoresponder_router
 from backend.api.broadcasts import router as broadcasts_router
 from backend.api.dialogs import router as dialogs_router
 from backend.api.features import router as features_router
+from backend.api.referrals import router as referrals_router
 from backend.api.uploads import router as uploads_router
 from backend.core.logging import configure_logging
 
@@ -18,6 +19,7 @@ app.include_router(autoresponder_router)
 app.include_router(broadcasts_router)
 app.include_router(dialogs_router)
 app.include_router(features_router)
+app.include_router(referrals_router)
 app.include_router(uploads_router)
 app.include_router(admin_router)
 

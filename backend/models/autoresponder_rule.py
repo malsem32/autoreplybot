@@ -14,5 +14,6 @@ class AutoresponderRule(TimestampMixin, Base):
     trigger_type: Mapped[str] = mapped_column(String(16), default="all")  # "all" | "keywords"
     keywords: Mapped[list[str]] = mapped_column(JSON, default=list)
     response_text: Mapped[str] = mapped_column(String)
-    photo_path: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Up to 10 photos under backend/core/uploads.UPLOAD_DIR; 2+ go out as an album.
+    photo_paths: Mapped[list[str]] = mapped_column(JSON, default=list)
     cooldown_seconds: Mapped[int] = mapped_column(Integer, default=3600)

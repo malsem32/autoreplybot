@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.security import InitDataError, parse_and_verify_init_data
 from backend.db.session import get_db
 from backend.models.user import User
+from backend.services import referrals
 
 
 async def get_current_user(
@@ -34,6 +35,11 @@ async def get_current_user(
     if user is None:
         user = User(telegram_id=telegram_id)
         db.add(user)
+        await db.flush()
+        # Mini App opened via t.me/<bot>/<app>?startapp=ref_<id>.
+        await referrals.attach_referrer(
+            db, user, referrals.parse_referral_code(pairs.get("start_param"))
+        )
         await db.commit()
         await db.refresh(user)
 

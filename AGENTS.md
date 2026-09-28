@@ -147,7 +147,7 @@
 - CRUD и проверка живучести — только `/api/admin/proxies*`, за `require_admin_user` (ADMIN_TELEGRAM_IDS, см. 4.6); пароль прокси никогда не возвращается наружу (`ProxyOut` его не содержит).
 - Проверка живучести (`backend/services/proxy_check.py`) — это TCP-connect до `host:port` самого прокси, а не полноценный SOCKS5/HTTP-хендшейк через него; сигнал "прокси отвечает", а не гарантия рабочего туннеля.
 - Выбор прокси для `send_code` (`backend/api/auth.py:_pick_send_code_proxy`) — случайный среди активных, с приоритетом у тех, чья последняя проверка была `alive`; если прокси нет или все неактивны — запрос идёт напрямую.
-- Требует `python-socks[asyncio]` в зависимостях (это использует Pyrogram для подключения через прокси) — держать в `requirements.txt` синхронно с `pyrogram`.
+- Требует `python-socks[asyncio]` в зависимостях (это использует Pyrogram для подключения через прокси) — держать в `requirements.txt` синхронно с `kurigram` (форк Pyrogram, импортируется как `pyrogram`).
 
 ### 4.13. Платная функция «Теги случайных участников» (Telegram Stars)
 

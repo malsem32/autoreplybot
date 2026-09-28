@@ -1,4 +1,5 @@
-from pyrogram import Client
+from pyrogram import Client, types
+from pyrogram.errors import UserAlreadyParticipant
 
 
 def _strip_tme_prefix(raw: str) -> str:
@@ -43,8 +44,26 @@ async def resolve_target(client: Client, raw: str) -> int:
 
     if cleaned.startswith("+") or cleaned.startswith("joinchat/"):
         invite_link = raw if raw.startswith("http") else f"https://t.me/{cleaned}"
-        chat = await client.join_chat(invite_link)
-        return chat.id
+        return await _join_by_invite(client, invite_link)
 
     chat = await client.get_chat(f"@{cleaned.lstrip('@')}")
+    if chat is None or chat.id is None:
+        raise ValueError(f"чат {raw} недоступен")
     return chat.id
+
+
+async def _join_by_invite(client: Client, invite_link: str) -> int:
+    try:
+        result = await client.join_chat(invite_link)
+    except UserAlreadyParticipant:
+        # Recurring campaigns hit this on every run after the first join:
+        # resolving the link of an already-joined chat yields the chat.
+        chat = await client.get_chat(invite_link)
+        chat_id = getattr(chat, "id", None)
+        if not isinstance(chat_id, int):
+            raise ValueError("не удалось определить чат по ссылке-приглашению") from None
+        return chat_id
+
+    if isinstance(result, types.ChatJoinResultSuccess) and result.chat.id is not None:
+        return result.chat.id
+    raise ValueError("заявка на вступление отправлена — дождитесь одобрения администратором чата")

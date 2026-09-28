@@ -1,7 +1,11 @@
+import logging
+
 from pyrogram import Client
 
 from backend.core.config import settings
 from backend.core.security import decrypt_session
+
+logger = logging.getLogger(__name__)
 
 
 class ClientManager:
@@ -32,10 +36,16 @@ class ClientManager:
     def get(self, account_id: int) -> Client | None:
         return self._clients.get(account_id)
 
+    def running_ids(self) -> set[int]:
+        return set(self._clients)
+
     async def stop(self, account_id: int) -> None:
         client = self._clients.pop(account_id, None)
         if client is not None:
-            await client.stop()
+            try:
+                await client.stop()
+            except Exception:  # noqa: BLE001 - the client is dropped from the pool regardless
+                logger.warning("failed to stop client for account %s cleanly", account_id)
 
     async def stop_all(self) -> None:
         for account_id in list(self._clients):

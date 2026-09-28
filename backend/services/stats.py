@@ -37,12 +37,14 @@ async def collect_dashboard_stats(db: AsyncSession) -> DashboardStats:
         select(func.count()).select_from(TelegramAccount).where(TelegramAccount.is_active.is_(True))
     )
 
-    campaign_status_counts = dict(
+    campaign_status_counts: dict[str, int] = dict(
         (
             await db.execute(
                 select(BroadcastCampaign.status, func.count()).group_by(BroadcastCampaign.status)
             )
-        ).all()
+        )
+        .tuples()
+        .all()
     )
 
     messages_sent_24h = await db.scalar(

@@ -50,7 +50,7 @@ async def test_mentions_of_real_members_appended_at_the_end():
     )
     text = "hi"
     result = await _append_random_tags(client, chat_id=1, text=text, tag_random_users=True)
-    assert result == f"hi[{TAG_PLACEHOLDER}](tg://user?id=1)"
+    assert result == f'hi<a href="tg://user?id=1">{TAG_PLACEHOLDER}</a>'
     assert "tg://user?id=2" not in result
 
 

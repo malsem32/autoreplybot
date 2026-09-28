@@ -9,12 +9,12 @@ from backend.api.deps import get_current_user
 from backend.core.config import settings
 from backend.core.security import encrypt_secret
 from backend.db.session import get_db
-from backend.models.feature_settings import TagFeatureSetting
+from backend.models.feature_settings import ProSetting
 from backend.models.proxy import Proxy
 from backend.models.user import User
-from backend.schemas.feature import TagFeatureSettingsOut, TagFeatureSettingsUpdate
+from backend.schemas.feature import ProSettingsOut, ProSettingsUpdate
 from backend.schemas.proxy import ProxyIn, ProxyOut, ProxyUpdate
-from backend.services import tag_feature
+from backend.services import pro
 from backend.services.proxy_check import check_proxy
 from backend.services.stats import DashboardStats, collect_dashboard_stats
 
@@ -26,7 +26,7 @@ async def require_admin_user(user: User = Depends(get_current_user)) -> User:
     caller's Telegram user_id must be in ADMIN_TELEGRAM_IDS. There is no
     separate Admin Panel or login — see AGENTS.md 4.6."""
     if user.telegram_id not in settings.admin_telegram_ids_list:
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "not an admin")
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Доступно только администраторам")
     return user
 
 
@@ -38,21 +38,21 @@ async def stats(
     return await collect_dashboard_stats(db)
 
 
-@router.get("/tag-feature", response_model=TagFeatureSettingsOut)
-async def get_tag_feature_settings(
+@router.get("/pro", response_model=ProSettingsOut)
+async def get_pro_settings(
     _admin: User = Depends(require_admin_user),
     db: AsyncSession = Depends(get_db),
-) -> TagFeatureSetting:
-    return await tag_feature.get_settings(db)
+) -> ProSetting:
+    return await pro.get_settings(db)
 
 
-@router.patch("/tag-feature", response_model=TagFeatureSettingsOut)
-async def update_tag_feature_settings(
-    payload: TagFeatureSettingsUpdate,
+@router.patch("/pro", response_model=ProSettingsOut)
+async def update_pro_settings(
+    payload: ProSettingsUpdate,
     _admin: User = Depends(require_admin_user),
     db: AsyncSession = Depends(get_db),
-) -> TagFeatureSetting:
-    row = await tag_feature.get_settings(db)
+) -> ProSetting:
+    row = await pro.get_settings(db)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(row, field, value)
     await db.commit()
@@ -63,7 +63,7 @@ async def update_tag_feature_settings(
 async def _get_proxy(db: AsyncSession, proxy_id: int) -> Proxy:
     proxy = await db.get(Proxy, proxy_id)
     if proxy is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "proxy not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Прокси не найден")
     return proxy
 
 

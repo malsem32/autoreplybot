@@ -1,3 +1,4 @@
+import re
 import uuid
 from pathlib import Path
 
@@ -24,3 +25,39 @@ def delete_upload(path: str | None) -> None:
     if not path:
         return
     Path(path).unlink(missing_ok=True)
+
+
+_SAFE_FILENAME = re.compile(r"^[a-f0-9]{32}\.(jpg|png|webp)$")
+
+
+def is_safe_filename(filename: str) -> bool:
+    return bool(_SAFE_FILENAME.match(filename))
+
+
+def resolve_upload_ref(ref: str) -> str:
+    """Turns a photo reference from the Mini App — the `path` returned by
+    upload, its `/api/uploads/<name>` URL, or the bare filename — into the
+    on-disk path under UPLOAD_DIR.
+
+    Only uploaded (UUID-named) files are accepted: without this, a crafted
+    request could make the worker send any file readable in its container
+    (e.g. "/etc/passwd") into a chat. Raises ValueError otherwise."""
+    filename = ref.rstrip("/").rsplit("/", 1)[-1]
+    if not is_safe_filename(filename):
+        raise ValueError("неизвестное фото — загрузите его заново")
+    path = UPLOAD_DIR / filename
+    if not path.is_file():
+        raise ValueError("фото не найдено на сервере — загрузите его заново")
+    return str(path)
+
+
+def photo_url(path: str) -> str:
+    return f"/api/uploads/{path.rsplit('/', 1)[-1]}"
+
+
+def delete_uploads(paths: list[str] | None, keep: list[str] | None = None) -> None:
+    """Deletes photo files no longer referenced (AGENTS.md 4.11)."""
+    keep_set = set(keep or [])
+    for path in paths or []:
+        if path not in keep_set:
+            delete_upload(path)
